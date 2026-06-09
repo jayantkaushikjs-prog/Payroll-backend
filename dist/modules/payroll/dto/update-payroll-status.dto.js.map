@@ -1,1 +1,0 @@
-{"version":3,"file":"update-payroll-status.dto.js","sourceRoot":"","sources":["../../../../src/modules/payroll/dto/update-payroll-status.dto.ts"],"names":[],"mappings":";;;;;;;;;;;;AAAA,qDAAmD;AAEnD,MAAa,sBAAsB;CAIlC;AAJD,wDAIC;AADC;IAFC,IAAA,4BAAU,EAAC,EAAE,OAAO,EAAE,oBAAoB,EAAE,CAAC;IAC7C,IAAA,sBAAI,EAAC,CAAC,OAAO,EAAE,WAAW,CAAC,EAAE,EAAE,OAAO,EAAE,mCAAmC,EAAE,CAAC;;sDACjD"}
