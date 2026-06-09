@@ -1,0 +1,89 @@
+import { Controller, Get, Post, Body, Param, Put, Delete, UseGuards, Res, Req, ForbiddenException } from '@nestjs/common';
+import { Response } from 'express';
+import { EmployeesService } from './employees.service';
+import { CreateEmployeeDto } from './dto/create-employee.dto';
+import { UpdateEmployeeDto } from './dto/update-employee.dto';
+import { JwtAuthGuard } from '../../common/guards/jwt-auth.guard';
+import { PermissionsGuard } from '../../common/guards/permissions.guard';
+import { RequirePermissions } from '../../common/decorators/permissions.decorator';
+import { Permission, Role } from '../../common/enums/role.enum';
+import { getRolePermissions } from '../../config/rbac.config';
+
+@Controller('employees')
+@UseGuards(JwtAuthGuard, PermissionsGuard)
+export class EmployeesController {
+  constructor(private readonly employeesService: EmployeesService) {}
+
+  @Get('csv')
+  @RequirePermissions(Permission.EXPORT_EMPLOYEES)
+  async downloadCsv(@Res() res: Response) {
+    const employees = await this.employeesService.findAll();
+    const csvContent = this.employeesService.generateCsv(employees);
+    const today = new Date().toISOString().split('T')[0];
+    res.setHeader('Content-Type', 'text/csv');
+    res.setHeader('Content-Disposition', `attachment; filename=employee-master_${today}.csv`);
+    return res.status(200).send(csvContent);
+  }
+
+  @Post()
+  @RequirePermissions(Permission.CREATE_EMPLOYEE)
+  create(@Body() createEmployeeDto: CreateEmployeeDto) {
+    return this.employeesService.create(createEmployeeDto);
+  }
+
+  @Post('import')
+  @RequirePermissions(Permission.CREATE_EMPLOYEE)
+  importCsv(@Body('csvContent') csvContent: string) {
+    return this.employeesService.importCsv(csvContent);
+  }
+
+  @Get()
+  findAll(@Req() req) {
+    const user = req.user;
+    if (!user || !user.role) {
+      throw new ForbiddenException('User role information is missing');
+    }
+    if (user.role === Role.SUPER_ADMIN) {
+      return this.employeesService.findAll();
+    }
+    const rolePermissions = getRolePermissions(user.role as Role);
+    if (
+      rolePermissions.includes(Permission.VIEW_EMPLOYEE) ||
+      rolePermissions.includes(Permission.MANAGE_SALARY_STRUCTURES)
+    ) {
+      return this.employeesService.findAll();
+    }
+    throw new ForbiddenException('You do not have permission to view employees');
+  }
+
+  @Get(':id')
+  findOne(@Param('id') id: string, @Req() req) {
+    const user = req.user;
+    if (!user || !user.role) {
+      throw new ForbiddenException('User role information is missing');
+    }
+    if (user.role === Role.SUPER_ADMIN) {
+      return this.employeesService.findOne(+id);
+    }
+    const rolePermissions = getRolePermissions(user.role as Role);
+    if (
+      rolePermissions.includes(Permission.VIEW_EMPLOYEE) ||
+      rolePermissions.includes(Permission.MANAGE_SALARY_STRUCTURES)
+    ) {
+      return this.employeesService.findOne(+id);
+    }
+    throw new ForbiddenException('You do not have permission to view this employee');
+  }
+
+  @Put(':id')
+  @RequirePermissions(Permission.UPDATE_EMPLOYEE)
+  update(@Param('id') id: string, @Body() updateEmployeeDto: UpdateEmployeeDto) {
+    return this.employeesService.update(+id, updateEmployeeDto);
+  }
+
+  @Delete(':id')
+  @RequirePermissions(Permission.DELETE_EMPLOYEE)
+  remove(@Param('id') id: string) {
+    return this.employeesService.remove(+id);
+  }
+}
