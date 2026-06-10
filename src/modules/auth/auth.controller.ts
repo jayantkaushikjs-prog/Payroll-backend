@@ -33,4 +33,20 @@ export class AuthController {
   async getMe(@Request() req) {
     return this.authService.getMe(req.user.sub);
   }
+
+  @Post('refresh')
+  @HttpCode(HttpStatus.OK)
+  async refresh(@Body('refresh_token') refreshToken: string) {
+    return this.authService.refresh(refreshToken);
+  }
+
+  @Post('logout')
+  @UseGuards(JwtAuthGuard)
+  @HttpCode(HttpStatus.OK)
+  async logout(@Request() req, @Body('refresh_token') refreshToken?: string) {
+    const authHeader = req.headers.authorization;
+    const accessToken = authHeader && authHeader.split(' ')[1];
+    return this.authService.logout(accessToken, refreshToken);
+  }
 }
+

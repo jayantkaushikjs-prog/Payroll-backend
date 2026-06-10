@@ -13,6 +13,8 @@ import { TaxSlab } from './modules/tax/tax-slab.entity';
 import { EmployeeAdvance } from './modules/advances/employee-advance.entity';
 import { Payroll } from './modules/payroll/payroll.entity';
 import { Expense } from './modules/expenses/expense.entity';
+import { RefreshToken } from './modules/auth/refresh-token.entity';
+import { BlacklistedToken } from './modules/auth/blacklisted-token.entity';
 
 // Modules
 import { AuthModule } from './modules/auth/auth.module';
@@ -50,6 +52,8 @@ import * as bcrypt from 'bcryptjs';
         EmployeeAdvance,
         Payroll,
         Expense,
+        RefreshToken,
+        BlacklistedToken,
       ],
       synchronize: true, // For development ease. Production should use migrations.
     }),
@@ -63,6 +67,8 @@ import * as bcrypt from 'bcryptjs';
       EmployeeAdvance,
       Payroll,
       Expense,
+      RefreshToken,
+      BlacklistedToken,
     ]),
     AuthModule,
     UsersModule,

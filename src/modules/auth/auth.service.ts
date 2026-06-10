@@ -8,12 +8,20 @@ import { ResetPasswordDto } from './dto/reset-password.dto';
 import * as bcrypt from 'bcryptjs';
 import { sendMail } from '../../common/utils/smtp-client';
 import * as crypto from 'crypto';
+import { InjectRepository } from '@nestjs/typeorm';
+import { Repository } from 'typeorm';
+import { RefreshToken } from './refresh-token.entity';
+import { BlacklistedToken } from './blacklisted-token.entity';
 
 @Injectable()
 export class AuthService {
   constructor(
     private readonly usersService: UsersService,
     private readonly jwtService: JwtService,
+    @InjectRepository(RefreshToken)
+    private readonly refreshTokenRepo: Repository<RefreshToken>,
+    @InjectRepository(BlacklistedToken)
+    private readonly blacklistedTokenRepo: Repository<BlacklistedToken>,
   ) {}
 
   async register(createUserDto: CreateUserDto) {
@@ -32,14 +40,113 @@ export class AuthService {
     }
 
     const payload = { sub: user.id, email: user.email, role: user.role };
+    const accessToken = await this.jwtService.signAsync(payload, { expiresIn: '15m' });
+    const refreshToken = await this.jwtService.signAsync(payload, { expiresIn: '7d' });
+
+    // Save refresh token in DB
+    const expiresAt = new Date();
+    expiresAt.setDate(expiresAt.getDate() + 7);
+
+    const rt = new RefreshToken();
+    rt.token = refreshToken;
+    rt.userId = user.id;
+    rt.expiresAt = expiresAt;
+    await this.refreshTokenRepo.save(rt);
+
     return {
-      access_token: await this.jwtService.signAsync(payload),
+      access_token: accessToken,
+      refresh_token: refreshToken,
       user: {
         id: user.id,
         email: user.email,
         role: user.role,
       },
     };
+  }
+
+  async refresh(token: string) {
+    try {
+      const payload = await this.jwtService.verifyAsync(token, {
+        secret: 'PAYROLL_SECRET_JWT_KEY_987654321',
+      });
+
+      // Find in DB
+      const dbToken = await this.refreshTokenRepo.findOne({
+        where: { token, isRevoked: false },
+        relations: ['user'],
+      });
+
+      if (!dbToken || dbToken.expiresAt < new Date()) {
+        throw new UnauthorizedException('Refresh token is invalid or expired');
+      }
+
+      // Generate new access token
+      const user = dbToken.user;
+      const newPayload = { sub: user.id, email: user.email, role: user.role };
+      
+      const newAccessToken = await this.jwtService.signAsync(newPayload, {
+        expiresIn: '15m',
+      });
+
+      // Refresh token rotation (generate a new refresh token and revoke the old one)
+      const newRefreshToken = await this.jwtService.signAsync(newPayload, {
+        expiresIn: '7d',
+      });
+
+      // Revoke old token
+      dbToken.isRevoked = true;
+      await this.refreshTokenRepo.save(dbToken);
+
+      // Save new refresh token
+      const expiresAt = new Date();
+      expiresAt.setDate(expiresAt.getDate() + 7);
+
+      const rt = new RefreshToken();
+      rt.token = newRefreshToken;
+      rt.userId = user.id;
+      rt.expiresAt = expiresAt;
+      await this.refreshTokenRepo.save(rt);
+
+      return {
+        access_token: newAccessToken,
+        refresh_token: newRefreshToken,
+      };
+    } catch (error) {
+      throw new UnauthorizedException('Refresh token is invalid or expired');
+    }
+  }
+
+  async logout(accessToken: string, refreshToken?: string) {
+    // Decode access token to find its expiration
+    try {
+      const decoded: any = this.jwtService.decode(accessToken);
+      const expiresAt = decoded && decoded.exp ? new Date(decoded.exp * 1000) : new Date(Date.now() + 24 * 60 * 60 * 1000);
+
+      // Add to blacklist
+      const blacklist = new BlacklistedToken();
+      blacklist.token = accessToken;
+      blacklist.expiresAt = expiresAt;
+      await this.blacklistedTokenRepo.save(blacklist);
+    } catch (e) {
+      // If decoding fails, blacklist with 24 hours default expiration
+      const blacklist = new BlacklistedToken();
+      blacklist.token = accessToken;
+      blacklist.expiresAt = new Date(Date.now() + 24 * 60 * 60 * 1000);
+      await this.blacklistedTokenRepo.save(blacklist);
+    }
+
+    // Revoke refresh token if provided
+    if (refreshToken) {
+      const dbToken = await this.refreshTokenRepo.findOne({
+        where: { token: refreshToken },
+      });
+      if (dbToken) {
+        dbToken.isRevoked = true;
+        await this.refreshTokenRepo.save(dbToken);
+      }
+    }
+
+    return { message: 'Logged out successfully' };
   }
 
   async getMe(userId: number) {
