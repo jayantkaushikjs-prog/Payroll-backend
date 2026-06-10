@@ -87,20 +87,34 @@ export class PayrollService {
     const activeAdvances = await this.advancesService.findActiveForEmployeeAtDate(employeeId, month, year);
     let advanceRecovery = 0;
     const advanceRecoveriesBreakdown = [];
+    
+    // Available salary left for advances after mandatory government/statutory deductions (PF and Tax)
+    let availableForAdvances = Math.max(0, Number((payableGross - pfDeduction - taxDeduction).toFixed(2)));
 
     for (const adv of activeAdvances) {
+      if (availableForAdvances <= 0) {
+        break; // Keep remaining deduction pending for further months
+      }
+
       let recovery = 0;
       if (adv.recovery_type === 'one_time') {
         recovery = Number(adv.remaining_amount);
       } else {
-        recovery = Math.min(Number(adv.installment_amount), Number(adv.remaining_amount));
+        const instAmount = adv.installment_amount ? Number(adv.installment_amount) : Number(adv.remaining_amount);
+        recovery = Math.min(instAmount, Number(adv.remaining_amount));
       }
       
-      advanceRecovery += recovery;
-      advanceRecoveriesBreakdown.push({
-        advanceId: adv.id,
-        amount: recovery,
-      });
+      // Cap the recovery at available salary to prevent negative net salary
+      const actualRecovery = Number(Math.min(recovery, availableForAdvances).toFixed(2));
+      
+      if (actualRecovery > 0) {
+        advanceRecovery += actualRecovery;
+        advanceRecoveriesBreakdown.push({
+          advanceId: adv.id,
+          amount: actualRecovery,
+        });
+        availableForAdvances = Number((availableForAdvances - actualRecovery).toFixed(2));
+      }
     }
 
     advanceRecovery = Number(advanceRecovery.toFixed(2));
@@ -218,7 +232,6 @@ export class PayrollService {
           for (const item of pr.recoveries_json) {
             await this.advancesService.revertRecovery(item.advanceId, item.amount);
           }
-          pr.recoveries_json = null;
         }
 
         pr.status = 'draft';

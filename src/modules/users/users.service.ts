@@ -1,9 +1,10 @@
-import { Injectable, ConflictException } from '@nestjs/common';
+import { Injectable, ConflictException, NotFoundException, BadRequestException } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
 import { User } from './user.entity';
 import { CreateUserDto } from './dto/create-user.dto';
 import * as bcrypt from 'bcryptjs';
+import { Role } from '../../common/enums/role.enum';
 
 @Injectable()
 export class UsersService {
@@ -66,6 +67,13 @@ export class UsersService {
   }
 
   async remove(id: number): Promise<void> {
+    const user = await this.findById(id);
+    if (!user) {
+      throw new NotFoundException('User not found');
+    }
+    if (user.role === Role.SUPER_ADMIN) {
+      throw new BadRequestException('Super Admin user cannot be deleted');
+    }
     await this.usersRepository.delete(id);
   }
 }

@@ -1,4 +1,4 @@
-import { Injectable, NotFoundException } from '@nestjs/common';
+import { Injectable, NotFoundException, BadRequestException } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
 import { EmployeeAdvance } from './employee-advance.entity';
@@ -15,6 +15,10 @@ export class AdvancesService {
 
   async create(createDto: CreateAdvanceDto): Promise<EmployeeAdvance> {
     await this.employeesService.findOne(createDto.employee_id);
+
+    if (createDto.recovery_type === 'installment' && (!createDto.installment_amount || createDto.installment_amount <= 0)) {
+      throw new BadRequestException('Installment amount is required and must be greater than 0 for installment recovery type');
+    }
 
     const advance = this.advancesRepository.create({
       ...createDto,

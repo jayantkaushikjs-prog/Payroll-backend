@@ -1,4 +1,4 @@
-import { Injectable, UnauthorizedException, BadRequestException, NotFoundException } from '@nestjs/common';
+import { Injectable, UnauthorizedException, BadRequestException, NotFoundException, InternalServerErrorException } from '@nestjs/common';
 import { JwtService } from '@nestjs/jwt';
 import { UsersService } from '../users/users.service';
 import { LoginDto } from './dto/login.dto';
@@ -7,6 +7,7 @@ import { ForgotPasswordDto } from './dto/forgot-password.dto';
 import { ResetPasswordDto } from './dto/reset-password.dto';
 import * as bcrypt from 'bcryptjs';
 import { sendMail } from '../../common/utils/smtp-client';
+import * as crypto from 'crypto';
 
 @Injectable()
 export class AuthService {
@@ -58,18 +59,17 @@ export class AuthService {
 
     // Generate a 6-digit numeric OTP
     const otp = Math.floor(100000 + Math.random() * 900000).toString();
-    user.reset_token = otp;
+    
+    // Hash the OTP (SHA-256) before storing it in the database for optimal security
+    const hashedOtp = crypto.createHash('sha256').update(otp).digest('hex');
+    user.reset_token = hashedOtp;
     user.reset_token_expires = new Date(Date.now() + 15 * 60 * 1000); // 15 minutes expiration
 
     await this.usersService.save(user);
 
-    // Try sending email via configured SMTP
-    const smtpHost = process.env.SMTP_HOST || 'smtp.yopmail.com';
-    const smtpPort = parseInt(process.env.SMTP_PORT || '25', 10);
-    const smtpSecure = process.env.SMTP_SECURE === 'true';
-    const smtpUser = process.env.SMTP_USER || '';
-    const smtpPass = process.env.SMTP_PASS || '';
-    const smtpFrom = process.env.SMTP_FROM || 'no-reply@payroll.com';
+    // Try sending email via SendGrid API
+    const sendGridApiKey = process.env.SENDGRID_API_KEY || process.env.SMTP_PASS || '';
+    const sendGridFrom = process.env.SENDGRID_FROM_EMAIL || process.env.SMTP_FROM || 'no-reply@payroll.com';
 
     const mailOptions = {
       to: user.email,
@@ -93,28 +93,27 @@ export class AuthService {
     try {
       await sendMail(
         {
-          host: smtpHost,
-          port: smtpPort,
-          secure: smtpSecure,
-          auth: smtpUser && smtpPass ? { user: smtpUser, pass: smtpPass } : undefined,
-          from: smtpFrom,
+          auth: sendGridApiKey ? { user: '', pass: sendGridApiKey } : undefined,
+          from: sendGridFrom,
         },
         mailOptions,
       );
-      console.log(`[SMTP success] OTP email sent successfully to ${user.email}`);
+      console.log(`[Mailer success] OTP email sent successfully to ${user.email}`);
     } catch (err: any) {
-      console.error(`[SMTP error] Failed to send OTP email to ${user.email}:`, err.message || err);
-      console.log(`[SMTP MOCK] For sandbox testing, the generated OTP is: ${otp}`);
+      console.error(`[Mailer error] Failed to send OTP email to ${user.email}:`, err.message || err);
+      throw new InternalServerErrorException('Failed to send OTP email. Please check SendGrid / Mailer configuration.');
     }
 
     return {
       message: 'Password reset OTP has been sent successfully.',
-      token: otp, // maintaining frontend compatibility
     };
   }
 
   async resetPassword(resetPasswordDto: ResetPasswordDto) {
-    const user = await this.usersService.findByResetToken(resetPasswordDto.token);
+    // Hash the incoming plain-text OTP input to compare it to the database SHA-256 hash
+    const hashedOtp = crypto.createHash('sha256').update(resetPasswordDto.token).digest('hex');
+
+    const user = await this.usersService.findByResetToken(hashedOtp);
     if (!user) {
       throw new BadRequestException('Invalid or expired reset token / OTP');
     }
