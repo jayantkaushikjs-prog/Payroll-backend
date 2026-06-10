@@ -1,0 +1,29 @@
+name: Payroll Github CI (Self-Hosted Runner)
+
+on:
+  push:
+    branches:
+      - dev
+  workflow_dispatch:
+
+jobs:
+  deploy:
+    runs-on: self-hosted
+    steps:
+      - name: Deploy on self-hosted server
+        run: |
+          set -e
+
+          echo "Running as: $(whoami)"
+
+          sudo bash -c '
+            set -e
+
+            echo "Running as: $(whoami)"
+
+            cd /var/www/html/node-js/payroll-management-backend
+            git pull origin dev
+            pm2 restart payroll-management-backend
+
+
+          '
