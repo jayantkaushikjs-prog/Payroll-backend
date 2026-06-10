@@ -19,23 +19,27 @@ export class ExpensesController {
 
   @Get()
   @RequirePermissions(Permission.VIEW_EXPENSES)
-  findAll() {
-    return this.expensesService.findAll();
+  findAll(@Query('excludeSalaries') excludeSalaries?: string) {
+    return this.expensesService.findAll(excludeSalaries === 'true');
   }
 
   @Get('monthly-summary')
   @RequirePermissions(Permission.VIEW_EXPENSES)
-  getMonthlySummary(@Query('month') month: string, @Query('year') year: string) {
+  getMonthlySummary(
+    @Query('month') month: string,
+    @Query('year') year: string,
+    @Query('excludeSalaries') excludeSalaries?: string,
+  ) {
     const m = month ? parseInt(month, 10) : new Date().getMonth() + 1;
     const y = year ? parseInt(year, 10) : new Date().getFullYear();
-    return this.expensesService.getCategorySummary(m, y);
+    return this.expensesService.getCategorySummary(m, y, excludeSalaries === 'true');
   }
 
   @Get('trends')
   @RequirePermissions(Permission.VIEW_EXPENSES)
-  getTrends(@Query('limit') limit?: string) {
+  getTrends(@Query('limit') limit?: string, @Query('excludeSalaries') excludeSalaries?: string) {
     const l = limit ? parseInt(limit, 10) : 6;
-    return this.expensesService.getExpensesTrend(l);
+    return this.expensesService.getExpensesTrend(l, excludeSalaries === 'true');
   }
 
   @Get(':id')

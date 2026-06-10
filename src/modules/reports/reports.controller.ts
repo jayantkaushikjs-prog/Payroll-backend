@@ -17,8 +17,8 @@ export class ReportsController {
   }
 
   @Get('dashboard')
-  getDashboardData(@Req() req: Request) {
-    return this.reportsService.getDashboardData(this.getRole(req));
+  getDashboardData(@Req() req: Request, @Query('excludeSalaries') excludeSalaries?: string) {
+    return this.reportsService.getDashboardData(this.getRole(req), excludeSalaries === 'true');
   }
 
   @Get('payroll/csv')

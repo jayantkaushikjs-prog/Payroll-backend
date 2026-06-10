@@ -1,6 +1,6 @@
 import { Injectable, NotFoundException } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
-import { Repository, Between } from 'typeorm';
+import { Repository, Between, Not } from 'typeorm';
 import { Expense } from './expense.entity';
 import { CreateExpenseDto } from './dto/create-expense.dto';
 
@@ -16,8 +16,13 @@ export class ExpensesService {
     return this.expensesRepository.save(expense);
   }
 
-  async findAll(): Promise<Expense[]> {
+  async findAll(excludeSalaries?: boolean): Promise<Expense[]> {
+    const where: any = {};
+    if (excludeSalaries) {
+      where.category = Not('salary');
+    }
     return this.expensesRepository.find({
+      where,
       order: { date: 'DESC', id: 'DESC' },
     });
   }
@@ -41,21 +46,26 @@ export class ExpensesService {
     await this.expensesRepository.remove(expense);
   }
 
-  async getExpensesForMonthAndYear(month: number, year: number): Promise<Expense[]> {
+  async getExpensesForMonthAndYear(month: number, year: number, excludeSalaries?: boolean): Promise<Expense[]> {
     const startOfMonth = `${year}-${String(month).padStart(2, '0')}-01`;
     const lastDay = new Date(year, month, 0).getDate();
     const endOfMonth = `${year}-${String(month).padStart(2, '0')}-${String(lastDay).padStart(2, '0')}`;
 
+    const where: any = {
+      date: Between(startOfMonth, endOfMonth),
+    };
+    if (excludeSalaries) {
+      where.category = Not('salary');
+    }
+
     return this.expensesRepository.find({
-      where: {
-        date: Between(startOfMonth, endOfMonth),
-      },
+      where,
       order: { date: 'ASC' },
     });
   }
 
-  async getCategorySummary(month: number, year: number) {
-    const expenses = await this.getExpensesForMonthAndYear(month, year);
+  async getCategorySummary(month: number, year: number, excludeSalaries?: boolean) {
+    const expenses = await this.getExpensesForMonthAndYear(month, year, excludeSalaries);
     const summary: Record<string, number> = {};
     let total = 0;
 
@@ -75,7 +85,7 @@ export class ExpensesService {
     };
   }
 
-  async getExpensesTrend(monthsLimit = 6) {
+  async getExpensesTrend(monthsLimit = 6, excludeSalaries?: boolean) {
     const trend: { name: string; amount: number }[] = [];
     const now = new Date();
     
@@ -85,7 +95,7 @@ export class ExpensesService {
       const y = d.getFullYear();
       const monthLabel = d.toLocaleString('default', { month: 'short' }) + ' ' + y;
       
-      const expenses = await this.getExpensesForMonthAndYear(m, y);
+      const expenses = await this.getExpensesForMonthAndYear(m, y, excludeSalaries);
       const total = expenses.reduce((sum, e) => sum + Number(e.amount), 0);
       
       trend.push({

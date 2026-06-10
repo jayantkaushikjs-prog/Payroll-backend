@@ -20,6 +20,12 @@ export class Expense {
   @Column({ type: 'date' })
   date: string; // YYYY-MM-DD
 
+  @Column({ type: 'date', nullable: true })
+  startDate: string; // YYYY-MM-DD
+
+  @Column({ type: 'date', nullable: true })
+  endDate: string; // YYYY-MM-DD
+
   @Column({ type: 'text', nullable: true })
   description: string;
 

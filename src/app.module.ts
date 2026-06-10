@@ -294,6 +294,8 @@ export class AppModule implements OnApplicationBootstrap {
           category: 'rent',
           frequency: 'monthly',
           date: `${yearStr}-${monthStr}-01`,
+          startDate: `2026-01-01`,
+          endDate: null,
           description: 'Monthly office rental fee',
         },
         {
@@ -302,6 +304,8 @@ export class AppModule implements OnApplicationBootstrap {
           category: 'salary',
           frequency: 'monthly',
           date: `${yearStr}-${monthStr}-28`,
+          startDate: `2026-01-01`,
+          endDate: null,
           description: 'Total monthly employee salaries disbursement',
         },
         {
@@ -310,6 +314,8 @@ export class AppModule implements OnApplicationBootstrap {
           category: 'utilities',
           frequency: 'monthly',
           date: `${yearStr}-${monthStr}-10`,
+          startDate: `2026-01-01`,
+          endDate: null,
           description: 'Hosting & server charges',
         },
         {
@@ -318,6 +324,8 @@ export class AppModule implements OnApplicationBootstrap {
           category: 'utilities',
           frequency: 'monthly',
           date: `${yearStr}-${monthStr}-12`,
+          startDate: `2026-01-01`,
+          endDate: null,
           description: 'High-speed fiber and power supply bills',
         },
         {
@@ -326,6 +334,8 @@ export class AppModule implements OnApplicationBootstrap {
           category: 'marketing',
           frequency: 'monthly',
           date: `${yearStr}-${monthStr}-05`,
+          startDate: `2026-01-01`,
+          endDate: null,
           description: 'Recruitment platform fees',
         }
       );
@@ -337,6 +347,8 @@ export class AppModule implements OnApplicationBootstrap {
           category: 'one-time',
           frequency: 'one-time',
           date: `${yearStr}-${monthStr}-18`,
+          startDate: null,
+          endDate: null,
           description: 'Purchase of 2 MacBook Airs for design team',
         });
       } else if (i === 2) {
@@ -346,6 +358,8 @@ export class AppModule implements OnApplicationBootstrap {
           category: 'one-time',
           frequency: 'one-time',
           date: `${yearStr}-${monthStr}-15`,
+          startDate: null,
+          endDate: null,
           description: 'Food, stay and travel for company annual retreat',
         });
       }

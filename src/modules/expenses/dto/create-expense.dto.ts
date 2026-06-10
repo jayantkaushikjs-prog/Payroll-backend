@@ -24,5 +24,13 @@ export class CreateExpenseDto {
 
   @IsOptional()
   @IsString()
+  startDate?: string;
+
+  @IsOptional()
+  @IsString()
+  endDate?: string;
+
+  @IsOptional()
+  @IsString()
   description?: string;
 }

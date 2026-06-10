@@ -48,7 +48,7 @@ export class ReportsService {
     return role === Role.SUPER_ADMIN || role === Role.FINANCE;
   }
 
-  async getDashboardData(role: Role) {
+  async getDashboardData(role: Role, excludeSalaries?: boolean) {
     const now = new Date();
     const month = now.getMonth() + 1;
     const year = now.getFullYear();
@@ -118,8 +118,8 @@ export class ReportsService {
         this.payrollService.getSumDeductions(),
         this.payrollService.getPayrollTrends(),
         this.payrollService.getRecentPayrollActivities(),
-        this.expensesService.getCategorySummary(month, year),
-        this.expensesService.getExpensesTrend(6),
+        this.expensesService.getCategorySummary(month, year, excludeSalaries),
+        this.expensesService.getExpensesTrend(6, excludeSalaries),
       ]);
 
       dashboard.stats.currentMonthPayroll = financeSummary.payrollTotal;
