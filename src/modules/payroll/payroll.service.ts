@@ -55,33 +55,40 @@ export class PayrollService {
     const payableGross = Math.max(0, grossSalary - nonPayableDeduction);
 
     // 4. PF Deduction
-    const pfSettings = await this.pfService.findActiveAtDate(`${year}-${String(month).padStart(2, '0')}-01`);
-    const payableBasic = Math.max(0, basicSalary - ((basicSalary / daysInMonth) * nonPayableDays));
-    const pfDeduction = Number((payableBasic * (Number(pfSettings.employee_contribution_rate) / 100)).toFixed(2));
+    let pfDeduction = 0;
+    if (employee.pf_deduction !== false) {
+      const pfSettings = await this.pfService.findActiveAtDate(`${year}-${String(month).padStart(2, '0')}-01`);
+      const payableBasic = Math.max(0, basicSalary - ((basicSalary / daysInMonth) * nonPayableDays));
+      const calculatedPf = Number((payableBasic * (Number(pfSettings.employee_contribution_rate) / 100)).toFixed(2));
+      pfDeduction = Math.min(1800, calculatedPf); // Cap PF at 1800 max per month
+    }
 
     // 5. Tax Deduction (Progressive Slabs)
-    const financialYear = this.getFinancialYear(month, year);
-    const taxRegime = employee.tax_regime || 'new';
-    const taxSlabs = await this.taxService.findByFinancialYearAndRegime(financialYear, taxRegime);
+    let taxDeduction = 0;
+    if (employee.tax_deduction !== false) {
+      const financialYear = this.getFinancialYear(month, year);
+      const taxRegime = employee.tax_regime || 'new';
+      const taxSlabs = await this.taxService.findByFinancialYearAndRegime(financialYear, taxRegime);
 
-    const projectedAnnualIncome = payableGross * 12;
-    let totalAnnualTax = 0;
+      const projectedAnnualIncome = payableGross * 12;
+      let totalAnnualTax = 0;
 
-    if (taxSlabs.length > 0) {
-      for (const slab of taxSlabs) {
-        const from = Number(slab.from_amount);
-        const to = slab.to_amount ? Number(slab.to_amount) : Infinity;
-        const rate = Number(slab.percentage) / 100;
+      if (taxSlabs.length > 0) {
+        for (const slab of taxSlabs) {
+          const from = Number(slab.from_amount);
+          const to = slab.to_amount ? Number(slab.to_amount) : Infinity;
+          const rate = Number(slab.percentage) / 100;
 
-        if (projectedAnnualIncome > from) {
-          const taxableInSlab = Math.min(projectedAnnualIncome, to) - from;
-          if (taxableInSlab > 0) {
-            totalAnnualTax += taxableInSlab * rate;
+          if (projectedAnnualIncome > from) {
+            const taxableInSlab = Math.min(projectedAnnualIncome, to) - from;
+            if (taxableInSlab > 0) {
+              totalAnnualTax += taxableInSlab * rate;
+            }
           }
         }
       }
+      taxDeduction = Number((totalAnnualTax / 12).toFixed(2));
     }
-    const taxDeduction = Number((totalAnnualTax / 12).toFixed(2));
 
     // 6. Advance Recovery
     const activeAdvances = await this.advancesService.findActiveForEmployeeAtDate(employeeId, month, year);
@@ -141,9 +148,12 @@ export class PayrollService {
     const payrollsList: Payroll[] = [];
 
     for (const emp of activeEmployees) {
-      // Check if a completed payroll already exists
+      // Check if a locked or disbursed payroll already exists
       const existingCompleted = await this.payrollRepository.findOne({
-        where: { employee_id: emp.id, month, year, status: 'completed' },
+        where: [
+          { employee_id: emp.id, month, year, status: 'locked' },
+          { employee_id: emp.id, month, year, status: 'disbursed' },
+        ],
       });
 
       if (existingCompleted) {
@@ -201,33 +211,34 @@ export class PayrollService {
     });
   }
 
-  async updatePayrollStatus(month: number, year: number, status: 'draft' | 'completed'): Promise<Payroll[]> {
+  async updatePayrollStatus(month: number, year: number, status: 'draft' | 'locked' | 'disbursed'): Promise<Payroll[]> {
     const payrolls = await this.getPayrollForMonthAndYear(month, year);
     if (payrolls.length === 0) {
       throw new NotFoundException(`No payroll records found for ${month}/${year}`);
     }
 
-    // Check if we are locking the payrolls to "completed"
-    if (status === 'completed') {
+    if (status === 'locked') {
       for (const pr of payrolls) {
-        if (pr.status === 'completed') continue; // Already completed
+        if (pr.status === 'locked' || pr.status === 'disbursed') continue;
 
-        // Finalize advance recoveries using the pre-calculated breakdown from the draft
+        // Finalize advance recoveries when locking
         if (pr.recoveries_json && pr.recoveries_json.length > 0) {
           for (const item of pr.recoveries_json) {
             await this.advancesService.recordRecovery(item.advanceId, item.amount);
           }
         }
 
-        pr.status = 'completed';
+        pr.status = 'locked';
         await this.payrollRepository.save(pr);
       }
-    } else {
-      // Revert status to draft if needed
+    } else if (status === 'draft') {
       for (const pr of payrolls) {
-        if (pr.status === 'draft') continue; // Already draft
+        if (pr.status === 'disbursed') {
+          throw new BadRequestException('Cannot unlock already disbursed payroll');
+        }
+        if (pr.status === 'draft') continue;
 
-        // Revert advance recoveries
+        // Revert advance recoveries when unlocking
         if (pr.recoveries_json && pr.recoveries_json.length > 0) {
           for (const item of pr.recoveries_json) {
             await this.advancesService.revertRecovery(item.advanceId, item.amount);
@@ -237,15 +248,25 @@ export class PayrollService {
         pr.status = 'draft';
         await this.payrollRepository.save(pr);
       }
+    } else if (status === 'disbursed') {
+      for (const pr of payrolls) {
+        if (pr.status === 'draft') {
+          throw new BadRequestException('Please lock the payroll first before disbursing');
+        }
+        if (pr.status === 'disbursed') continue;
+
+        pr.status = 'disbursed';
+        await this.payrollRepository.save(pr);
+      }
     }
 
     return this.getPayrollForMonthAndYear(month, year);
   }
 
   async countTotalPayrollCost(): Promise<number> {
-    // Computes sum of net salary for completed payrolls of the latest calculated month
+    // Computes sum of net salary for disbursed payrolls of the latest calculated month
     const latestPayroll = await this.payrollRepository.findOne({
-      where: { status: 'completed' },
+      where: { status: 'disbursed' },
       order: { year: 'DESC', month: 'DESC' },
     });
     if (!latestPayroll) return 0;
@@ -255,7 +276,7 @@ export class PayrollService {
       .where('pr.month = :month AND pr.year = :year AND pr.status = :status', {
         month: latestPayroll.month,
         year: latestPayroll.year,
-        status: 'completed',
+        status: 'disbursed',
       })
       .getRawOne();
     return Number(result?.total || 0);
@@ -294,7 +315,7 @@ export class PayrollService {
     });
 
     return payrolls.map((payroll) => ({
-      title: payroll.status === 'completed' ? 'Payroll finalized' : 'Payroll draft updated',
+      title: payroll.status === 'disbursed' ? 'Payroll disbursed' : payroll.status === 'locked' ? 'Payroll locked' : 'Payroll draft updated',
       description: `${payroll.employee?.employee_code || 'Employee'} - ${payroll.month}/${payroll.year}`,
       date: payroll.updated_at,
     }));
@@ -304,7 +325,7 @@ export class PayrollService {
     const result = await this.payrollRepository.createQueryBuilder('pr')
       .select('SUM(pr.pf_deduction)', 'pf')
       .addSelect('SUM(pr.tax_deduction)', 'tax')
-      .where('pr.status = :status', { status: 'completed' })
+      .where('pr.status = :status', { status: 'disbursed' })
       .getRawOne();
     return {
       pf: Number(result?.pf || 0),
@@ -313,14 +334,14 @@ export class PayrollService {
   }
 
   async getPayrollTrends(): Promise<any[]> {
-    // Group completed payroll costs by month and year for last 6 runs
+    // Group disbursed payroll costs by month and year for last 6 runs
     const results = await this.payrollRepository.createQueryBuilder('pr')
       .select('pr.month', 'month')
       .addSelect('pr.year', 'year')
       .addSelect('SUM(pr.net_salary)', 'net_cost')
       .addSelect('SUM(pr.pf_deduction)', 'pf_total')
       .addSelect('SUM(pr.tax_deduction)', 'tax_total')
-      .where('pr.status = :status', { status: 'completed' })
+      .where('pr.status = :status', { status: 'disbursed' })
       .groupBy('pr.year')
       .addGroupBy('pr.month')
       .orderBy('pr.year', 'ASC')

@@ -43,6 +43,9 @@ export const ROLE_PERMISSIONS: Record<Role, Permission[]> = {
     // System
     Permission.MANAGE_COMPANY_SETTINGS,
     Permission.VIEW_AUDIT_LOGS,
+    // Expenses
+    Permission.MANAGE_EXPENSES,
+    Permission.VIEW_EXPENSES,
   ],
 
   [Role.HR]: [
@@ -80,6 +83,9 @@ export const ROLE_PERMISSIONS: Record<Role, Permission[]> = {
     // Reports
     Permission.VIEW_PAYROLL_REPORTS,
     Permission.VIEW_FINANCIAL_DASHBOARDS,
+    // Expenses
+    Permission.MANAGE_EXPENSES,
+    Permission.VIEW_EXPENSES,
   ],
 };
 

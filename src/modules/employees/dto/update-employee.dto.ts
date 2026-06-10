@@ -103,4 +103,12 @@ export class UpdateEmployeeDto {
   @IsOptional()
   @IsBoolean()
   active_status?: boolean;
+
+  @IsOptional()
+  @IsBoolean()
+  pf_deduction?: boolean;
+
+  @IsOptional()
+  @IsBoolean()
+  tax_deduction?: boolean;
 }

@@ -41,6 +41,12 @@ export class Employee {
   @Column({ default: true })
   active_status: boolean;
 
+  @Column({ default: true })
+  pf_deduction: boolean;
+
+  @Column({ default: true })
+  tax_deduction: boolean;
+
   @CreateDateColumn()
   created_at: Date;
 

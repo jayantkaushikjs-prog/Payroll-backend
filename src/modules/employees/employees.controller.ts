@@ -1,4 +1,4 @@
-import { Controller, Get, Post, Body, Param, Put, Delete, UseGuards, Res, Req, ForbiddenException } from '@nestjs/common';
+import { Controller, Get, Post, Body, Param, Put, Delete, UseGuards, Res, Req, Query, ForbiddenException } from '@nestjs/common';
 import { Response } from 'express';
 import { EmployeesService } from './employees.service';
 import { CreateEmployeeDto } from './dto/create-employee.dto';
@@ -73,6 +73,12 @@ export class EmployeesController {
       return this.employeesService.findOne(+id);
     }
     throw new ForbiddenException('You do not have permission to view this employee');
+  }
+
+  @Get(':id/financial-summary')
+  getFinancialSummary(@Param('id') id: string, @Query('year') year: string) {
+    const yr = year ? parseInt(year, 10) : new Date().getFullYear();
+    return this.employeesService.getFinancialSummary(+id, yr);
   }
 
   @Put(':id')

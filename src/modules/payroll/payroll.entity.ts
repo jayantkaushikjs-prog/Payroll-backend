@@ -39,7 +39,7 @@ export class Payroll {
   net_salary: number;
 
   @Column({ type: 'varchar', length: 20, default: 'draft' })
-  status: 'draft' | 'completed';
+  status: 'draft' | 'locked' | 'disbursed';
 
   @Column({ type: 'json', nullable: true })
   recoveries_json: { advanceId: number; amount: number }[];

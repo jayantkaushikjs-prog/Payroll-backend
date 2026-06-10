@@ -6,6 +6,7 @@ import { PayrollModule } from '../payroll/payroll.module';
 import { AdvancesModule } from '../advances/advances.module';
 import { SalaryStructuresModule } from '../salary-structures/salary-structures.module';
 import { NonPayableDaysModule } from '../non-payable-days/non-payable-days.module';
+import { ExpensesModule } from '../expenses/expenses.module';
 
 @Module({
   imports: [
@@ -14,6 +15,7 @@ import { NonPayableDaysModule } from '../non-payable-days/non-payable-days.modul
     AdvancesModule,
     SalaryStructuresModule,
     NonPayableDaysModule,
+    ExpensesModule,
   ],
   providers: [ReportsService],
   controllers: [ReportsController],

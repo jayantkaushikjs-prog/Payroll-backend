@@ -4,12 +4,21 @@ import { Between, Repository } from 'typeorm';
 import { Employee } from './employee.entity';
 import { CreateEmployeeDto } from './dto/create-employee.dto';
 import { UpdateEmployeeDto } from './dto/update-employee.dto';
+import { Payroll } from '../payroll/payroll.entity';
+import { SalaryStructure } from '../salary-structures/salary-structure.entity';
+import { EmployeeAdvance } from '../advances/employee-advance.entity';
 
 @Injectable()
 export class EmployeesService {
   constructor(
     @InjectRepository(Employee)
     private employeesRepository: Repository<Employee>,
+    @InjectRepository(Payroll)
+    private payrollRepository: Repository<Payroll>,
+    @InjectRepository(SalaryStructure)
+    private salaryStructureRepository: Repository<SalaryStructure>,
+    @InjectRepository(EmployeeAdvance)
+    private advanceRepository: Repository<EmployeeAdvance>,
   ) {}
 
   async create(createEmployeeDto: CreateEmployeeDto): Promise<Employee> {
@@ -33,6 +42,10 @@ export class EmployeesService {
 
   async findAll(): Promise<Employee[]> {
     return this.employeesRepository.find({ order: { employee_code: 'ASC' } });
+  }
+
+  async findByCode(code: string): Promise<Employee | null> {
+    return this.employeesRepository.findOne({ where: { employee_code: code } });
   }
 
   async findOne(id: number): Promise<Employee> {
@@ -254,5 +267,79 @@ export class EmployeesService {
     }
     result.push(current);
     return result;
+  }
+
+  async getFinancialSummary(employeeId: number, year: number): Promise<any> {
+    const employee = await this.findOne(employeeId);
+
+    // Get all disbursed payrolls for the employee in that year
+    const payrolls = await this.payrollRepository.find({
+      where: { employee_id: employeeId, year, status: 'disbursed' },
+    });
+
+    const amountPaid = payrolls.reduce((sum, p) => sum + Number(p.net_salary), 0);
+    const pfDeducted = payrolls.reduce((sum, p) => sum + Number(p.pf_deduction), 0);
+    const taxDeducted = payrolls.reduce((sum, p) => sum + Number(p.tax_deduction), 0);
+    const advanceRecovered = payrolls.reduce((sum, p) => sum + Number(p.advance_recovery), 0);
+
+    // Get salary structure to calculate remaining/to-be-paid months
+    const structure = await this.salaryStructureRepository.findOne({
+      where: { employee_id: employeeId },
+    });
+
+    let amountToBePaid = 0;
+    let expectedPFRemaining = 0;
+    let expectedTaxRemaining = 0;
+
+    if (structure) {
+      const monthlyGross = Number(structure.gross_salary);
+
+      // Find which months in the year already have a disbursed payroll
+      const paidMonths = payrolls.map(p => p.month);
+      const remainingMonths = Array.from({ length: 12 }, (_, i) => i + 1).filter(m => !paidMonths.includes(m));
+
+      for (const m of remainingMonths) {
+        // Expected PF
+        let pf = 0;
+        if (employee.pf_deduction !== false) {
+          pf = Math.min(Number(structure.basic_salary) * 0.12, 1800);
+        }
+
+        // Expected Tax
+        let tax = 0;
+        if (employee.tax_deduction !== false) {
+          // Simple slab rate emulation or 10% estimation
+          tax = monthlyGross > 50000 ? monthlyGross * 0.10 : 0;
+        }
+
+        const net = monthlyGross - pf - tax;
+        amountToBePaid += net;
+        expectedPFRemaining += pf;
+        expectedTaxRemaining += tax;
+      }
+    }
+
+    // Get all advances
+    const advances = await this.advanceRepository.find({
+      where: { employee_id: employeeId },
+    });
+
+    const totalAdvancesTaken = advances.reduce((sum, a) => sum + Number(a.amount), 0);
+    const totalAdvancesRepaid = advances.reduce((sum, a) => sum + Number(a.total_recovered), 0);
+    const remainingAdvanceBalance = totalAdvancesTaken - totalAdvancesRepaid;
+
+    return {
+      year,
+      amountPaid,
+      amountToBePaid,
+      pfDeducted,
+      expectedPFRemaining,
+      taxDeducted,
+      expectedTaxRemaining,
+      advanceRecovered,
+      totalAdvancesTaken,
+      totalAdvancesRepaid,
+      remainingAdvanceBalance,
+    };
   }
 }

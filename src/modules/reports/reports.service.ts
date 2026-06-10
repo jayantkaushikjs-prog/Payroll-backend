@@ -4,6 +4,7 @@ import { PayrollService } from '../payroll/payroll.service';
 import { AdvancesService } from '../advances/advances.service';
 import { SalaryStructuresService } from '../salary-structures/salary-structures.service';
 import { NonPayableDaysService } from '../non-payable-days/non-payable-days.service';
+import { ExpensesService } from '../expenses/expenses.service';
 import { Role } from '../../common/enums/role.enum';
 import { formatCurrency } from '../../config/currency.config';
 
@@ -15,6 +16,7 @@ export class ReportsService {
     private advancesService: AdvancesService,
     private salaryStructuresService: SalaryStructuresService,
     private nonPayableDaysService: NonPayableDaysService,
+    private expensesService: ExpensesService,
   ) {}
 
   filename(reportType: string): string {
@@ -102,12 +104,22 @@ export class ReportsService {
     }
 
     if (dashboard.access.finance) {
-      const [financeSummary, totalAdvancesOutstanding, deductionTotals, payrollTrends, payrollActivities] = await Promise.all([
+      const [
+        financeSummary,
+        totalAdvancesOutstanding,
+        deductionTotals,
+        payrollTrends,
+        payrollActivities,
+        expensesSummary,
+        expensesTrend,
+      ] = await Promise.all([
         this.payrollService.getCurrentMonthFinanceSummary(month, year),
         this.advancesService.countTotalOutstanding(),
         this.payrollService.getSumDeductions(),
         this.payrollService.getPayrollTrends(),
         this.payrollService.getRecentPayrollActivities(),
+        this.expensesService.getCategorySummary(month, year),
+        this.expensesService.getExpensesTrend(6),
       ]);
 
       dashboard.stats.currentMonthPayroll = financeSummary.payrollTotal;
@@ -117,6 +129,7 @@ export class ReportsService {
       dashboard.stats.pfContributions = financeSummary.pfContributions;
       dashboard.stats.esiContributions = 0;
       dashboard.stats.totalPayrollThisMonth = financeSummary.payrollTotal;
+      dashboard.stats.totalExpensesThisMonth = expensesSummary.total;
       dashboard.summaries.taxPfEsi = {
         tax: deductionTotals.tax,
         pf: deductionTotals.pf,
@@ -129,6 +142,8 @@ export class ReportsService {
         pendingCount: financeSummary.pendingPayrollCount,
       };
       dashboard.charts.payrollTrends = payrollTrends;
+      dashboard.charts.expensesTrend = expensesTrend;
+      dashboard.charts.expensesCategoryDistribution = expensesSummary.breakdown;
       dashboard.activities.push(...payrollActivities);
       dashboard.notices.push('ESI tracking is not configured yet.');
     }

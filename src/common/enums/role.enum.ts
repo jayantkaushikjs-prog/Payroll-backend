@@ -51,4 +51,8 @@ export enum Permission {
   // System Settings
   MANAGE_COMPANY_SETTINGS = 'manage_company_settings',
   VIEW_AUDIT_LOGS = 'view_audit_logs',
+
+  // Expenses
+  MANAGE_EXPENSES = 'manage_expenses',
+  VIEW_EXPENSES = 'view_expenses',
 }

@@ -12,6 +12,7 @@ import { PFSettings } from './modules/pf/pf-settings.entity';
 import { TaxSlab } from './modules/tax/tax-slab.entity';
 import { EmployeeAdvance } from './modules/advances/employee-advance.entity';
 import { Payroll } from './modules/payroll/payroll.entity';
+import { Expense } from './modules/expenses/expense.entity';
 
 // Modules
 import { AuthModule } from './modules/auth/auth.module';
@@ -24,6 +25,7 @@ import { TaxModule } from './modules/tax/tax.module';
 import { AdvancesModule } from './modules/advances/advances.module';
 import { PayrollModule } from './modules/payroll/payroll.module';
 import { ReportsModule } from './modules/reports/reports.module';
+import { ExpensesModule } from './modules/expenses/expenses.module';
 
 // Helpers
 import { Role } from './common/enums/role.enum';
@@ -47,6 +49,7 @@ import * as bcrypt from 'bcryptjs';
         TaxSlab,
         EmployeeAdvance,
         Payroll,
+        Expense,
       ],
       synchronize: true, // For development ease. Production should use migrations.
     }),
@@ -59,6 +62,7 @@ import * as bcrypt from 'bcryptjs';
       TaxSlab,
       EmployeeAdvance,
       Payroll,
+      Expense,
     ]),
     AuthModule,
     UsersModule,
@@ -70,6 +74,7 @@ import * as bcrypt from 'bcryptjs';
     AdvancesModule,
     PayrollModule,
     ReportsModule,
+    ExpensesModule,
   ],
   providers: [],
 })
@@ -82,6 +87,7 @@ export class AppModule implements OnApplicationBootstrap {
     @InjectRepository(TaxSlab) private readonly taxRepo: Repository<TaxSlab>,
     @InjectRepository(EmployeeAdvance) private readonly advanceRepo: Repository<EmployeeAdvance>,
     @InjectRepository(Payroll) private readonly payrollRepo: Repository<Payroll>,
+    @InjectRepository(Expense) private readonly expenseRepo: Repository<Expense>,
   ) {}
 
   async onApplicationBootstrap() {
@@ -89,6 +95,7 @@ export class AppModule implements OnApplicationBootstrap {
     await this.seedPFSettings();
     await this.seedTaxSlabs();
     await this.seedEmployees();
+    await this.seedExpenses();
   }
 
   private async seedUsers() {
@@ -242,7 +249,7 @@ export class AppModule implements OnApplicationBootstrap {
           tax_deduction: monthlyTax,
           advance_recovery: 0,
           net_salary: net,
-          status: 'completed',
+          status: 'disbursed',
         }));
       }
     }
@@ -263,6 +270,89 @@ export class AppModule implements OnApplicationBootstrap {
         start_year: 2026,
         is_fully_recovered: false,
       }));
+    }
+  }
+
+  private async seedExpenses() {
+    const count = await this.expenseRepo.count();
+    if (count > 0) return;
+
+    console.log('Seeding default company expenses...');
+    const now = new Date();
+    
+    const expenses = [];
+    
+    for (let i = 0; i < 4; i++) {
+      const d = new Date(now.getFullYear(), now.getMonth() - i, 15);
+      const yearStr = d.getFullYear();
+      const monthStr = String(d.getMonth() + 1).padStart(2, '0');
+      
+      expenses.push(
+        {
+          title: 'Office Space Rent',
+          amount: 25000,
+          category: 'rent',
+          frequency: 'monthly',
+          date: `${yearStr}-${monthStr}-01`,
+          description: 'Monthly office rental fee',
+        },
+        {
+          title: 'Employee Salaries',
+          amount: 171000,
+          category: 'salary',
+          frequency: 'monthly',
+          date: `${yearStr}-${monthStr}-28`,
+          description: 'Total monthly employee salaries disbursement',
+        },
+        {
+          title: 'AWS & Heroku Cloud Infrastructure',
+          amount: 4500,
+          category: 'utilities',
+          frequency: 'monthly',
+          date: `${yearStr}-${monthStr}-10`,
+          description: 'Hosting & server charges',
+        },
+        {
+          title: 'Office Internet & Electric Bill',
+          amount: 2200,
+          category: 'utilities',
+          frequency: 'monthly',
+          date: `${yearStr}-${monthStr}-12`,
+          description: 'High-speed fiber and power supply bills',
+        },
+        {
+          title: 'LinkedIn Recruiters Subscription',
+          amount: 8000,
+          category: 'marketing',
+          frequency: 'monthly',
+          date: `${yearStr}-${monthStr}-05`,
+          description: 'Recruitment platform fees',
+        }
+      );
+      
+      if (i === 0) {
+        expenses.push({
+          title: 'Laptops for New Hires',
+          amount: 150000,
+          category: 'one-time',
+          frequency: 'one-time',
+          date: `${yearStr}-${monthStr}-18`,
+          description: 'Purchase of 2 MacBook Airs for design team',
+        });
+      } else if (i === 2) {
+        expenses.push({
+          title: 'Annual Team Offsite Meeting',
+          amount: 85000,
+          category: 'one-time',
+          frequency: 'one-time',
+          date: `${yearStr}-${monthStr}-15`,
+          description: 'Food, stay and travel for company annual retreat',
+        });
+      }
+    }
+
+    for (const exp of expenses) {
+      await this.expenseRepo.save(this.expenseRepo.create(exp));
     }
   }
 }

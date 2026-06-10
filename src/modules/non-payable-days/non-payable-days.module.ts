@@ -4,10 +4,11 @@ import { NonPayableDays } from './non-payable-days.entity';
 import { NonPayableDaysService } from './non-payable-days.service';
 import { NonPayableDaysController } from './non-payable-days.controller';
 import { EmployeesModule } from '../employees/employees.module';
+import { Payroll } from '../payroll/payroll.entity';
 
 @Module({
   imports: [
-    TypeOrmModule.forFeature([NonPayableDays]),
+    TypeOrmModule.forFeature([NonPayableDays, Payroll]),
     EmployeesModule,
   ],
   providers: [NonPayableDaysService],

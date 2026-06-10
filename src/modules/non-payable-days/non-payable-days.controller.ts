@@ -17,6 +17,12 @@ export class NonPayableDaysController {
     return this.nonPayableDaysService.createOrUpdate(createDto);
   }
 
+  @Post('import')
+  @RequirePermissions(Permission.MANAGE_NON_PAYABLE_DAYS)
+  importCsv(@Body('csvContent') csvContent: string) {
+    return this.nonPayableDaysService.importCsv(csvContent);
+  }
+
   @Get()
   @RequirePermissions(Permission.MANAGE_NON_PAYABLE_DAYS)
   findAll() {
