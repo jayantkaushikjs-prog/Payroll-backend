@@ -8,6 +8,7 @@ import {
   IsIn,
   Matches,
   Length,
+  IsNumber,
 } from 'class-validator';
 import { Transform } from 'class-transformer';
 
@@ -112,4 +113,40 @@ export class CreateEmployeeDto {
   @IsOptional()
   @IsBoolean()
   tax_deduction?: boolean;
+
+  @IsOptional()
+  @IsDateString({}, { message: 'Relieving date must be a valid ISO date string (YYYY-MM-DD)' })
+  relieving_date?: string;
+
+  @IsOptional()
+  @IsString()
+  other_inputs?: string;
+
+  @IsOptional()
+  @IsNumber({}, { message: 'Number of days present must be a number' })
+  no_of_days_present?: number;
+
+  @IsOptional()
+  @IsNumber({}, { message: 'Deduction (Absent) must be a number' })
+  deduction_absent?: number;
+
+  @IsOptional()
+  @IsNumber({}, { message: 'Appraisal must be a number' })
+  appraisal?: number;
+
+  @IsOptional()
+  @IsNumber({}, { message: 'Leave Encashment must be a number' })
+  leave_encashment?: number;
+
+  @IsOptional()
+  @IsNumber({}, { message: 'Late Arrival Deduction must be a number' })
+  late_arrival_deduction?: number;
+
+  @IsOptional()
+  @IsNumber({}, { message: 'Damages Recovery must be a number' })
+  damages_recovery?: number;
+
+  @IsOptional()
+  @IsString()
+  remarks?: string;
 }

@@ -1,6 +1,6 @@
 import { Injectable, NotFoundException } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
-import { Repository, Between, Not } from 'typeorm';
+import { Repository, Between, Not, In } from 'typeorm';
 import { Expense } from './expense.entity';
 import { CreateExpenseDto } from './dto/create-expense.dto';
 
@@ -19,7 +19,7 @@ export class ExpensesService {
   async findAll(excludeSalaries?: boolean): Promise<Expense[]> {
     const where: any = {};
     if (excludeSalaries) {
-      where.category = Not('salary');
+      where.category = Not(In(['salary', 'pf']));
     }
     return this.expensesRepository.find({
       where,
@@ -55,7 +55,7 @@ export class ExpensesService {
       date: Between(startOfMonth, endOfMonth),
     };
     if (excludeSalaries) {
-      where.category = Not('salary');
+      where.category = Not(In(['salary', 'pf']));
     }
 
     return this.expensesRepository.find({

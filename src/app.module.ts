@@ -143,8 +143,17 @@ export class AppModule implements OnApplicationBootstrap {
     // Clear existing tax slabs to replace them with the new configuration
     await this.taxRepo.clear();
 
-    console.log('Seeding default Tax Slabs (FY 2026-2027)...');
+    console.log('Seeding default Tax Slabs (FY 2025-2026 and FY 2026-2027)...');
     const slabs = [
+      // New Regime (FY 2025-2026)
+      { financial_year: '2025-2026', regime: 'new', from_amount: 0, to_amount: 400000, percentage: 0 },
+      { financial_year: '2025-2026', regime: 'new', from_amount: 400000, to_amount: 800000, percentage: 5 },
+      { financial_year: '2025-2026', regime: 'new', from_amount: 800000, to_amount: 1200000, percentage: 10 },
+      { financial_year: '2025-2026', regime: 'new', from_amount: 1200000, to_amount: 1600000, percentage: 15 },
+      { financial_year: '2025-2026', regime: 'new', from_amount: 1600000, to_amount: 2000000, percentage: 20 },
+      { financial_year: '2025-2026', regime: 'new', from_amount: 2000000, to_amount: 2400000, percentage: 25 },
+      { financial_year: '2025-2026', regime: 'new', from_amount: 2400000, to_amount: null, percentage: 30 },
+
       // New Regime (FY 2026-2027)
       { financial_year: '2026-2027', regime: 'new', from_amount: 0, to_amount: 400000, percentage: 0 },
       { financial_year: '2026-2027', regime: 'new', from_amount: 400000, to_amount: 800000, percentage: 5 },
