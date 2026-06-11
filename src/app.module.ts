@@ -140,24 +140,19 @@ export class AppModule implements OnApplicationBootstrap {
   }
 
   private async seedTaxSlabs() {
-    const count = await this.taxRepo.count();
-    if (count > 0) return;
+    // Clear existing tax slabs to replace them with the new configuration
+    await this.taxRepo.clear();
 
     console.log('Seeding default Tax Slabs (FY 2026-2027)...');
     const slabs = [
       // New Regime (FY 2026-2027)
-      { financial_year: '2026-2027', regime: 'new', from_amount: 0, to_amount: 300000, percentage: 0 },
-      { financial_year: '2026-2027', regime: 'new', from_amount: 300000, to_amount: 600000, percentage: 5 },
-      { financial_year: '2026-2027', regime: 'new', from_amount: 600000, to_amount: 900000, percentage: 10 },
-      { financial_year: '2026-2027', regime: 'new', from_amount: 900000, to_amount: 1200000, percentage: 15 },
-      { financial_year: '2026-2027', regime: 'new', from_amount: 1200000, to_amount: 1500000, percentage: 20 },
-      { financial_year: '2026-2027', regime: 'new', from_amount: 1500000, to_amount: null, percentage: 30 },
-
-      // Old Regime (FY 2026-2027)
-      { financial_year: '2026-2027', regime: 'old', from_amount: 0, to_amount: 250000, percentage: 0 },
-      { financial_year: '2026-2027', regime: 'old', from_amount: 250000, to_amount: 500000, percentage: 5 },
-      { financial_year: '2026-2027', regime: 'old', from_amount: 500000, to_amount: 1000000, percentage: 20 },
-      { financial_year: '2026-2027', regime: 'old', from_amount: 1000000, to_amount: null, percentage: 30 },
+      { financial_year: '2026-2027', regime: 'new', from_amount: 0, to_amount: 400000, percentage: 0 },
+      { financial_year: '2026-2027', regime: 'new', from_amount: 400000, to_amount: 800000, percentage: 5 },
+      { financial_year: '2026-2027', regime: 'new', from_amount: 800000, to_amount: 1200000, percentage: 10 },
+      { financial_year: '2026-2027', regime: 'new', from_amount: 1200000, to_amount: 1600000, percentage: 15 },
+      { financial_year: '2026-2027', regime: 'new', from_amount: 1600000, to_amount: 2000000, percentage: 20 },
+      { financial_year: '2026-2027', regime: 'new', from_amount: 2000000, to_amount: 2400000, percentage: 25 },
+      { financial_year: '2026-2027', regime: 'new', from_amount: 2400000, to_amount: null, percentage: 30 },
     ];
 
     for (const s of slabs) {
@@ -202,8 +197,8 @@ export class AppModule implements OnApplicationBootstrap {
     ];
 
     const salaries = [
-      { basic_salary: 50000, hra: 20000, special_allowance: 15000, other_allowance: 10000, gross_salary: 95000 },
-      { basic_salary: 40000, hra: 16000, special_allowance: 12000, other_allowance: 8000, gross_salary: 76000 },
+      { basic_salary: 47500, hra: 19000, special_allowance: 0, other_allowance: 28500, gross_salary: 95000, ctc: 96800 },
+      { basic_salary: 38000, hra: 15200, special_allowance: 0, other_allowance: 22800, gross_salary: 76000, ctc: 77800 },
     ];
 
     for (let i = 0; i < employeesData.length; i++) {
@@ -215,6 +210,7 @@ export class AppModule implements OnApplicationBootstrap {
         special_allowance: salaries[i].special_allowance,
         other_allowance: salaries[i].other_allowance,
         gross_salary: salaries[i].gross_salary,
+        ctc: salaries[i].ctc,
         effective_from: '2026-01-01',
         is_active: true,
       });
@@ -231,16 +227,18 @@ export class AppModule implements OnApplicationBootstrap {
         // Calculate progressive tax on gross * 12
         const annualGross = gross * 12;
         let annualTax = 0;
-        if (annualGross > 1500000) {
-          annualTax += (annualGross - 1500000) * 0.30 + 300000 * 0.20 + 300000 * 0.15 + 300000 * 0.10 + 300000 * 0.05;
+        if (annualGross > 2400000) {
+          annualTax += (annualGross - 2400000) * 0.30 + 400000 * 0.25 + 400000 * 0.20 + 400000 * 0.15 + 400000 * 0.10 + 400000 * 0.05;
+        } else if (annualGross > 2000000) {
+          annualTax += (annualGross - 2000000) * 0.25 + 400000 * 0.20 + 400000 * 0.15 + 400000 * 0.10 + 400000 * 0.05;
+        } else if (annualGross > 1600000) {
+          annualTax += (annualGross - 1600000) * 0.20 + 400000 * 0.15 + 400000 * 0.10 + 400000 * 0.05;
         } else if (annualGross > 1200000) {
-          annualTax += (annualGross - 1200000) * 0.20 + 300000 * 0.15 + 300000 * 0.10 + 300000 * 0.05;
-        } else if (annualGross > 900000) {
-          annualTax += (annualGross - 900000) * 0.15 + 300000 * 0.10 + 300000 * 0.05;
-        } else if (annualGross > 600000) {
-          annualTax += (annualGross - 600000) * 0.10 + 300000 * 0.05;
-        } else if (annualGross > 300000) {
-          annualTax += (annualGross - 300000) * 0.05;
+          annualTax += (annualGross - 1200000) * 0.15 + 400000 * 0.10 + 400000 * 0.05;
+        } else if (annualGross > 800000) {
+          annualTax += (annualGross - 800000) * 0.10 + 400000 * 0.05;
+        } else if (annualGross > 400000) {
+          annualTax += (annualGross - 400000) * 0.05;
         }
         const monthlyTax = Number((annualTax / 12).toFixed(2));
         const net = gross - pf - monthlyTax;
@@ -313,6 +311,16 @@ export class AppModule implements OnApplicationBootstrap {
           startDate: `2026-01-01`,
           endDate: null,
           description: 'Total monthly employee salaries disbursement',
+        },
+        {
+          title: 'Employer PF Contribution',
+          amount: 3600,
+          category: 'pf',
+          frequency: 'monthly',
+          date: `${yearStr}-${monthStr}-28`,
+          startDate: `2026-01-01`,
+          endDate: null,
+          description: 'Total monthly employer PF contribution',
         },
         {
           title: 'AWS & Heroku Cloud Infrastructure',

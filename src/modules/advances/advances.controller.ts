@@ -1,6 +1,7 @@
-import { Controller, Get, Post, Body, Param, Delete, UseGuards } from '@nestjs/common';
+import { Controller, Get, Post, Put, Body, Param, Delete, UseGuards } from '@nestjs/common';
 import { AdvancesService } from './advances.service';
 import { CreateAdvanceDto } from './dto/create-advance.dto';
+import { UpdateAdvanceDto } from './dto/update-advance.dto';
 import { JwtAuthGuard } from '../../common/guards/jwt-auth.guard';
 import { PermissionsGuard } from '../../common/guards/permissions.guard';
 import { RequirePermissions } from '../../common/decorators/permissions.decorator';
@@ -27,6 +28,12 @@ export class AdvancesController {
   @RequirePermissions(Permission.VIEW_ADVANCES)
   findByEmployee(@Param('employeeId') employeeId: string) {
     return this.advancesService.findByEmployee(+employeeId);
+  }
+
+  @Put(':id')
+  @RequirePermissions(Permission.MANAGE_ADVANCES)
+  update(@Param('id') id: string, @Body() updateDto: UpdateAdvanceDto) {
+    return this.advancesService.update(+id, updateDto);
   }
 
   @Delete(':id')

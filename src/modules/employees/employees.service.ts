@@ -139,6 +139,11 @@ export class EmployeesService {
     }));
   }
 
+  private escapeCsv(value: unknown): string {
+    const text = value === null || value === undefined ? '' : String(value);
+    return `"${text.replace(/"/g, '""')}"`;
+  }
+
   generateCsv(employees: Employee[]): string {
     const headers = [
       'Employee Code',
@@ -155,16 +160,16 @@ export class EmployeesService {
     ];
 
     const rows = employees.map(emp => [
-      `"${emp.employee_code}"`,
-      `"${emp.name.replace(/"/g, '""')}"`,
-      `"${emp.email}"`,
-      `"${emp.phone || ''}"`,
-      `"${emp.department.replace(/"/g, '""')}"`,
-      `"${emp.designation.replace(/"/g, '""')}"`,
-      `"${emp.joining_date}"`,
-      `"${emp.bank_name.replace(/"/g, '""')}"`,
-      `"${emp.account_number}"`,
-      `"${emp.ifsc}"`,
+      this.escapeCsv(emp.employee_code),
+      this.escapeCsv(emp.name),
+      this.escapeCsv(emp.email),
+      this.escapeCsv(emp.phone),
+      this.escapeCsv(emp.department),
+      this.escapeCsv(emp.designation),
+      this.escapeCsv(emp.joining_date),
+      this.escapeCsv(emp.bank_name),
+      this.escapeCsv(emp.account_number),
+      this.escapeCsv(emp.ifsc),
       emp.active_status ? 'Active' : 'Inactive',
     ]);
 
@@ -180,6 +185,10 @@ export class EmployeesService {
     const headers = this.parseCsvLine(lines[0]).map(h => h.trim().toLowerCase());
     const errors: string[] = [];
     let importedCount = 0;
+
+    const csvEmployeeCodes = new Set<string>();
+    const csvEmails = new Set<string>();
+    const csvPhones = new Set<string>();
 
     for (let i = 1; i < lines.length; i++) {
       try {
@@ -208,7 +217,6 @@ export class EmployeesService {
           }
         });
 
-        // Set default values if missing
         if (!data.tax_regime) {
           data.tax_regime = 'new';
         }
@@ -216,24 +224,54 @@ export class EmployeesService {
           data.active_status = true;
         }
 
-        // Basic validations
         if (!data.employee_code || !data.name || !data.email) {
           errors.push(`Row ${i + 1}: Missing employee_code, name, or email`);
           continue;
         }
 
+        const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+        if (!emailRegex.test(data.email)) {
+          errors.push(`Row ${i + 1}: Invalid email format "${data.email}"`);
+          continue;
+        }
+
+        if (csvEmployeeCodes.has(data.employee_code)) {
+          errors.push(`Row ${i + 1}: Duplicate Employee Code "${data.employee_code}" in CSV`);
+          continue;
+        }
+        if (csvEmails.has(data.email.toLowerCase())) {
+          errors.push(`Row ${i + 1}: Duplicate Email "${data.email}" in CSV`);
+          continue;
+        }
+        if (data.phone && csvPhones.has(data.phone)) {
+          errors.push(`Row ${i + 1}: Duplicate Phone "${data.phone}" in CSV`);
+          continue;
+        }
+
+        csvEmployeeCodes.add(data.employee_code);
+        csvEmails.add(data.email.toLowerCase());
+        if (data.phone) csvPhones.add(data.phone);
+
         const existingCode = await this.employeesRepository.findOne({ where: { employee_code: data.employee_code } });
+        
+        const existingEmail = await this.employeesRepository.findOne({ where: { email: data.email } });
+        if (existingEmail && (!existingCode || existingEmail.id !== existingCode.id)) {
+          errors.push(`Row ${i + 1}: Email "${data.email}" is already taken by another employee`);
+          continue;
+        }
+
+        if (data.phone) {
+          const existingPhone = await this.employeesRepository.findOne({ where: { phone: data.phone } });
+          if (existingPhone && (!existingCode || existingPhone.id !== existingCode.id)) {
+            errors.push(`Row ${i + 1}: Phone "${data.phone}" is already taken by another employee`);
+            continue;
+          }
+        }
+
         if (existingCode) {
-          // Update
           Object.assign(existingCode, data);
           await this.employeesRepository.save(existingCode);
         } else {
-          // Create
-          const existingEmail = await this.employeesRepository.findOne({ where: { email: data.email } });
-          if (existingEmail) {
-            errors.push(`Row ${i + 1}: Email ${data.email} already exists for another employee`);
-            continue;
-          }
           await this.employeesRepository.save(this.employeesRepository.create(data));
         }
         importedCount++;

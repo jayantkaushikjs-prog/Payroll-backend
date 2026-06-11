@@ -17,6 +17,12 @@ export class SalaryStructuresController {
     return this.salaryStructuresService.create(createSalaryStructureDto);
   }
 
+  @Post('import')
+  @RequirePermissions(Permission.MANAGE_SALARY_STRUCTURES)
+  importCsv(@Body('csvContent') csvContent: string) {
+    return this.salaryStructuresService.importCsv(csvContent);
+  }
+
   // IMPORTANT: static routes must come before parameterized routes
   @Get('active')
   @RequirePermissions(Permission.MANAGE_SALARY_STRUCTURES)

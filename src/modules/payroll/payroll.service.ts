@@ -8,6 +8,7 @@ import { NonPayableDaysService } from '../non-payable-days/non-payable-days.serv
 import { PFService } from '../pf/pf.service';
 import { TaxService } from '../tax/tax.service';
 import { AdvancesService } from '../advances/advances.service';
+import { ExpensesService } from '../expenses/expenses.service';
 
 @Injectable()
 export class PayrollService {
@@ -20,6 +21,7 @@ export class PayrollService {
     private pfService: PFService,
     private taxService: TaxService,
     private advancesService: AdvancesService,
+    private expensesService: ExpensesService,
   ) {}
 
   private getFinancialYear(month: number, year: number): string {
@@ -258,9 +260,81 @@ export class PayrollService {
         pr.status = 'disbursed';
         await this.payrollRepository.save(pr);
       }
+
+      await this.syncPayrollExpenses(month, year);
     }
 
     return this.getPayrollForMonthAndYear(month, year);
+  }
+
+  private async syncPayrollExpenses(month: number, year: number) {
+    const payrolls = await this.getPayrollForMonthAndYear(month, year);
+    const disbursedPayrolls = payrolls.filter(pr => pr.status === 'disbursed');
+    if (disbursedPayrolls.length === 0) return;
+
+    let totalGrossSalaries = 0;
+    let totalEmployerPF = 0;
+
+    const daysInMonth = new Date(year, month, 0).getDate();
+    const pfSettings = await this.pfService.findActiveAtDate(`${year}-${String(month).padStart(2, '0')}-01`);
+    const employerContributionRate = Number(pfSettings.employer_contribution_rate) / 100;
+
+    for (const pr of disbursedPayrolls) {
+      totalGrossSalaries += Number(pr.gross_salary);
+
+      if (pr.employee && pr.employee.pf_deduction !== false) {
+        try {
+          const structure = await this.salaryStructuresService.findActiveByEmployee(pr.employee_id);
+          const basicSalary = Number(structure.basic_salary);
+          
+          const npdRecord = await this.nonPayableDaysService.findByEmployeeMonthAndYear(pr.employee_id, month, year);
+          const nonPayableDays = npdRecord ? Number(npdRecord.days) : 0;
+          
+          const payableBasic = Math.max(0, basicSalary - ((basicSalary / daysInMonth) * nonPayableDays));
+          const employer_pf = Math.min(1800, Number((payableBasic * employerContributionRate).toFixed(2)));
+          
+          totalEmployerPF += employer_pf;
+        } catch (err) {
+          totalEmployerPF += Number(pr.pf_deduction);
+        }
+      }
+    }
+
+    totalGrossSalaries = Number(totalGrossSalaries.toFixed(2));
+    totalEmployerPF = Number(totalEmployerPF.toFixed(2));
+
+    const dateStr = `${year}-${String(month).padStart(2, '0')}-28`;
+
+    let salaryExpense = await this.expensesService.getExpensesForMonthAndYear(month, year);
+    let salariesEntry = salaryExpense.find(exp => exp.category === 'salary');
+    if (salariesEntry) {
+      await this.expensesService.update(salariesEntry.id, { amount: totalGrossSalaries });
+    } else {
+      await this.expensesService.create({
+        title: 'Employee Salaries',
+        amount: totalGrossSalaries,
+        category: 'salary',
+        frequency: 'monthly',
+        date: dateStr,
+        startDate: `${year}-${String(month).padStart(2, '0')}-01`,
+        description: `Total monthly employee salaries disbursement for ${month}/${year}`,
+      });
+    }
+
+    let pfEntry = salaryExpense.find(exp => exp.category === 'pf');
+    if (pfEntry) {
+      await this.expensesService.update(pfEntry.id, { amount: totalEmployerPF });
+    } else {
+      await this.expensesService.create({
+        title: 'Employer PF Contribution',
+        amount: totalEmployerPF,
+        category: 'pf',
+        frequency: 'monthly',
+        date: dateStr,
+        startDate: `${year}-${String(month).padStart(2, '0')}-01`,
+        description: `Total monthly employer PF contribution for ${month}/${year}`,
+      });
+    }
   }
 
   async countTotalPayrollCost(): Promise<number> {

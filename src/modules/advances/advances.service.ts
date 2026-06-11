@@ -102,6 +102,46 @@ export class AdvancesService {
     return Number(result?.total || 0);
   }
 
+  async update(id: number, updateDto: Partial<CreateAdvanceDto>): Promise<EmployeeAdvance> {
+    const adv = await this.advancesRepository.findOne({ where: { id } });
+    if (!adv) {
+      throw new NotFoundException(`Advance ID ${id} not found`);
+    }
+
+    const recoveryType = updateDto.recovery_type !== undefined ? updateDto.recovery_type : adv.recovery_type;
+    const installmentAmount = updateDto.installment_amount !== undefined ? updateDto.installment_amount : adv.installment_amount;
+
+    if (recoveryType === 'installment' && (!installmentAmount || installmentAmount <= 0)) {
+      throw new BadRequestException('Installment amount is required and must be greater than 0 for installment recovery type');
+    }
+
+    if (updateDto.amount !== undefined) {
+      const newAmount = Number(updateDto.amount);
+      if (newAmount < Number(adv.total_recovered)) {
+        throw new BadRequestException(`Advance amount cannot be less than the already recovered amount of ${adv.total_recovered}`);
+      }
+      adv.amount = newAmount;
+      adv.remaining_amount = Number((newAmount - Number(adv.total_recovered)).toFixed(2));
+      adv.is_fully_recovered = adv.remaining_amount <= 0.01;
+    }
+
+    if (updateDto.employee_id !== undefined) {
+      await this.employeesService.findOne(updateDto.employee_id);
+      adv.employee_id = updateDto.employee_id;
+    }
+
+    if (updateDto.date !== undefined) adv.date = updateDto.date;
+    if (updateDto.reason !== undefined) adv.reason = updateDto.reason;
+    if (updateDto.recovery_type !== undefined) adv.recovery_type = updateDto.recovery_type;
+    if (updateDto.installment_amount !== undefined) {
+      adv.installment_amount = updateDto.recovery_type === 'one_time' ? null : Number(installmentAmount);
+    }
+    if (updateDto.start_month !== undefined) adv.start_month = updateDto.start_month;
+    if (updateDto.start_year !== undefined) adv.start_year = updateDto.start_year;
+
+    return this.advancesRepository.save(adv);
+  }
+
   async remove(id: number): Promise<void> {
     await this.advancesRepository.delete(id);
   }
