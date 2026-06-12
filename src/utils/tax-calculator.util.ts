@@ -1,124 +1,187 @@
+import { TAX_CONFIG, DEFAULT_FY } from '../config/tax.config';
+
 export interface TaxSlabInput {
   from_amount: number | string;
   to_amount: number | string | null;
   percentage: number | string;
 }
 
-const DEFAULT_NEW_SLABS = [
-  { from_amount: 0, to_amount: 400000, percentage: 0 },
-  { from_amount: 400000, to_amount: 800000, percentage: 5 },
-  { from_amount: 800000, to_amount: 1200000, percentage: 10 },
-  { from_amount: 1200000, to_amount: 1600000, percentage: 15 },
-  { from_amount: 1600000, to_amount: 2000000, percentage: 20 },
-  { from_amount: 2000000, to_amount: 2400000, percentage: 25 },
-  { from_amount: 2400000, to_amount: null, percentage: 30 },
-];
+export interface SlabBreakdownItem {
+  from: number;
+  to: number | null;
+  rate: number;
+  taxableInSlab: number;
+  taxAmount: number;
+}
 
-export function calculateAnnualTax(
+export interface TaxBreakdown {
+  grossIncome: number;
+  standardDeduction: number;
+  taxableIncome: number;
+  slabs: SlabBreakdownItem[];
+  baseTax: number;
+  rebate: number;
+  taxBeforeSurcharge: number;
+  surcharge: number;
+  cess: number;
+  finalTax: number;
+  monthlyTDS: number;
+}
+
+/**
+ * Calculates progressive tax and returns a detailed breakdown object.
+ */
+export function calculateAnnualTaxWithBreakdown(
   projectedAnnualIncome: number,
   regime?: string,
-  slabsInput?: TaxSlabInput[]
-): number {
-  // Always use the new regime tax slabs and rules
-  const slabs = slabsInput && slabsInput.length > 0 
-    ? slabsInput 
-    : DEFAULT_NEW_SLABS;
+  slabsInput?: TaxSlabInput[],
+  financialYear?: string
+): TaxBreakdown {
+  const fy = financialYear && TAX_CONFIG[financialYear] ? financialYear : DEFAULT_FY;
+  const config = TAX_CONFIG[fy];
 
-  // Standard Deduction: ₹75,000 (salaried employees)
-  const standardDeduction = 75000;
+  // 1. Apply Standard Deduction
+  const standardDeduction = config.standardDeduction;
   const taxableIncome = Math.max(0, projectedAnnualIncome - standardDeduction);
 
-  // Calculate progressive tax on taxable income
+  // 2. Map Slabs from database input or use default configuration
+  const slabs = slabsInput && slabsInput.length > 0
+    ? slabsInput.map(s => ({
+        from: Number(s.from_amount),
+        to: s.to_amount ? Number(s.to_amount) : null,
+        rate: Number(s.percentage),
+      }))
+    : config.slabs;
+
+  // 3. Progressive Tax Computation
   let baseTax = 0;
+  const slabBreakdowns: SlabBreakdownItem[] = [];
+
   for (const slab of slabs) {
-    const from = Number(slab.from_amount);
-    const to = slab.to_amount ? Number(slab.to_amount) : Infinity;
-    const rate = Number(slab.percentage) / 100;
+    const from = slab.from;
+    const to = slab.to !== null ? slab.to : Infinity;
+    const rate = slab.rate / 100;
 
+    let taxableInSlab = 0;
     if (taxableIncome > from) {
-      const taxableInSlab = Math.min(taxableIncome, to) - from;
-      if (taxableInSlab > 0) {
-        baseTax += taxableInSlab * rate;
-      }
+      taxableInSlab = Math.min(taxableIncome, to) - from;
     }
+    taxableInSlab = Math.max(0, taxableInSlab);
+    const taxAmount = Number(taxableInSlab * rate);
+    baseTax += taxAmount;
+
+    slabBreakdowns.push({
+      from,
+      to: slab.to,
+      rate: slab.rate,
+      taxableInSlab: Number(taxableInSlab.toFixed(2)),
+      taxAmount: Number(taxAmount.toFixed(2)),
+    });
   }
 
-  // Section 87A Rebate: up to ₹60,000 if taxable income <= ₹12 lakh
-  // Marginal relief near ₹12 lakh threshold
-  let taxBeforeSurcharge = baseTax;
-  if (taxableIncome <= 1200000) {
-    taxBeforeSurcharge = 0;
+  baseTax = Number(baseTax.toFixed(2));
+
+  // 4. Section 87A Rebate with Marginal Relief at 12L threshold
+  let rebate = 0;
+  if (taxableIncome <= config.rebate.threshold) {
+    rebate = baseTax; // Full rebate up to tax amount
   } else {
-    const excessIncomeOver12L = taxableIncome - 1200000;
-    if (baseTax > excessIncomeOver12L) {
-      taxBeforeSurcharge = excessIncomeOver12L;
+    // Check marginal relief: rebate = baseTax - (taxableIncome - threshold)
+    const excessIncome = taxableIncome - config.rebate.threshold;
+    if (baseTax > excessIncome) {
+      rebate = baseTax - excessIncome;
     }
   }
 
-  // Surcharge support for high-income taxpayers (with marginal relief)
-  let taxAndSurcharge = taxBeforeSurcharge;
+  rebate = Number(rebate.toFixed(2));
+  const taxBeforeSurcharge = Number(Math.max(0, baseTax - rebate).toFixed(2));
 
-  if (taxableIncome > 5000000) {
-    let surchargeRate = 0;
-    let threshold = 5000000;
-    let thresholdSurchargeRate = 0;
+  // 5. Surcharge Calculation with Surcharge Marginal Relief
+  let surchargeRate = 0;
+  let activeThresholdObj = null;
 
-    if (taxableIncome <= 10000000) {
-      surchargeRate = 0.10;
-      threshold = 5000000;
-      thresholdSurchargeRate = 0;
-    } else if (taxableIncome <= 20000000) {
-      surchargeRate = 0.15;
-      threshold = 10000000;
-      thresholdSurchargeRate = 0.10;
-    } else {
-      surchargeRate = 0.25;
-      threshold = 20000000;
-      thresholdSurchargeRate = 0.15;
+  for (const s of config.surcharges) {
+    if (taxableIncome > s.threshold) {
+      surchargeRate = s.rate;
+      activeThresholdObj = s;
     }
+  }
 
-    // Calculate progressive tax at threshold
-    let taxAtThreshold = 0;
+  let surcharge = Number((taxBeforeSurcharge * surchargeRate).toFixed(2));
+  let taxAndSurcharge = taxBeforeSurcharge + surcharge;
+
+  if (activeThresholdObj) {
+    const threshold = activeThresholdObj.threshold;
+    
+    // Calculate base tax at the threshold
+    let baseTaxAtThreshold = 0;
     for (const slab of slabs) {
-      const from = Number(slab.from_amount);
-      const to = slab.to_amount ? Number(slab.to_amount) : Infinity;
-      const rate = Number(slab.percentage) / 100;
+      const from = slab.from;
+      const to = slab.to !== null ? slab.to : Infinity;
+      const rate = slab.rate / 100;
 
+      let taxableInSlab = 0;
       if (threshold > from) {
-        const taxableInSlab = Math.min(threshold, to) - from;
-        if (taxableInSlab > 0) {
-          taxAtThreshold += taxableInSlab * rate;
-        }
+        taxableInSlab = Math.min(threshold, to) - from;
       }
+      taxableInSlab = Math.max(0, taxableInSlab);
+      baseTaxAtThreshold += taxableInSlab * rate;
     }
 
-    let taxBeforeSurchargeAtThreshold = taxAtThreshold;
-    if (threshold <= 1200000) {
-      taxBeforeSurchargeAtThreshold = 0;
-    } else {
-      const excessIncomeOver12L = threshold - 1200000;
-      if (taxAtThreshold > excessIncomeOver12L) {
-        taxBeforeSurchargeAtThreshold = excessIncomeOver12L;
+    const rebateAtThreshold = 0; // Surcharge thresholds are always > 12L, so 0 rebate
+    const taxBeforeSurchargeAtThreshold = Math.max(0, baseTaxAtThreshold - rebateAtThreshold);
+
+    // Find surcharge rate at threshold
+    let thresholdSurchargeRate = 0;
+    for (const s of config.surcharges) {
+      if (threshold > s.threshold) {
+        thresholdSurchargeRate = s.rate;
       }
     }
 
     const surchargeAtThreshold = taxBeforeSurchargeAtThreshold * thresholdSurchargeRate;
-    const totalAtThreshold = taxBeforeSurchargeAtThreshold + surchargeAtThreshold;
-
-    const currentSurcharge = taxBeforeSurcharge * surchargeRate;
-    const currentTotal = taxBeforeSurcharge + currentSurcharge;
+    const totalTaxAndSurchargeAtThreshold = taxBeforeSurchargeAtThreshold + surchargeAtThreshold;
 
     const excessIncomeOverThreshold = taxableIncome - threshold;
-    const maxAllowed = totalAtThreshold + excessIncomeOverThreshold;
+    const maxAllowedTaxAndSurcharge = totalTaxAndSurchargeAtThreshold + excessIncomeOverThreshold;
 
-    if (currentTotal > maxAllowed) {
-      taxAndSurcharge = maxAllowed;
-    } else {
-      taxAndSurcharge = currentTotal;
+    if (taxAndSurcharge > maxAllowedTaxAndSurcharge) {
+      taxAndSurcharge = maxAllowedTaxAndSurcharge;
+      surcharge = Number(Math.max(0, taxAndSurcharge - taxBeforeSurcharge).toFixed(2));
     }
   }
 
-  // Health & Education Cess: 4%
-  const cess = taxAndSurcharge * 0.04;
-  return taxAndSurcharge + cess;
+  taxAndSurcharge = Number(taxAndSurcharge.toFixed(2));
+
+  // 6. Cess: 4%
+  const cess = Number((taxAndSurcharge * config.cessRate).toFixed(2));
+  const finalTax = Number((taxAndSurcharge + cess).toFixed(2));
+  const monthlyTDS = Number((finalTax / 12).toFixed(2));
+
+  return {
+    grossIncome: projectedAnnualIncome,
+    standardDeduction,
+    taxableIncome,
+    slabs: slabBreakdowns,
+    baseTax,
+    rebate,
+    taxBeforeSurcharge,
+    surcharge,
+    cess,
+    finalTax,
+    monthlyTDS,
+  };
+}
+
+/**
+ * Backwards compatible function that returns just the final annual tax number.
+ */
+export function calculateAnnualTax(
+  projectedAnnualIncome: number,
+  regime?: string,
+  slabsInput?: TaxSlabInput[],
+  financialYear?: string
+): number {
+  const breakdown = calculateAnnualTaxWithBreakdown(projectedAnnualIncome, regime, slabsInput, financialYear);
+  return breakdown.finalTax;
 }

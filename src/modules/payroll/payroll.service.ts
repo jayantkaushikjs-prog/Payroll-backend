@@ -9,7 +9,7 @@ import { PFService } from '../pf/pf.service';
 import { TaxService } from '../tax/tax.service';
 import { AdvancesService } from '../advances/advances.service';
 import { ExpensesService } from '../expenses/expenses.service';
-import { calculateAnnualTax } from '../../utils/tax-calculator.util';
+import { calculateAnnualTax, calculateAnnualTaxWithBreakdown } from '../../utils/tax-calculator.util';
 
 @Injectable()
 export class PayrollService {
@@ -68,18 +68,26 @@ export class PayrollService {
 
     // 5. Tax Deduction (Progressive Slabs)
     let taxDeduction = 0;
+    let taxBreakdown = null;
     if (employee.tax_deduction !== false) {
       const financialYear = this.getFinancialYear(month, year);
       const taxRegime = employee.tax_regime || 'new';
       const taxSlabs = await this.taxService.findByFinancialYearAndRegime(financialYear, taxRegime);
 
       const projectedAnnualIncome = payableGross * 12;
-      let totalAnnualTax = 0;
 
-      if (taxSlabs.length > 0) {
-        totalAnnualTax = calculateAnnualTax(projectedAnnualIncome, taxRegime, taxSlabs);
-      }
-      taxDeduction = Number((totalAnnualTax / 12).toFixed(2));
+      const breakdown = calculateAnnualTaxWithBreakdown(
+        projectedAnnualIncome,
+        taxRegime,
+        taxSlabs,
+        financialYear
+      );
+
+      taxDeduction = Number((breakdown.finalTax / 12).toFixed(2));
+      taxBreakdown = {
+        ...breakdown,
+        monthlyTDS: taxDeduction,
+      };
     }
 
     // 6. Advance Recovery
@@ -130,6 +138,7 @@ export class PayrollService {
       advanceRecovery,
       netSalary,
       advanceRecoveriesBreakdown,
+      taxBreakdown,
     };
   }
 
@@ -168,6 +177,7 @@ export class PayrollService {
           payroll.advance_recovery = calc.advanceRecovery;
           payroll.net_salary = calc.netSalary;
           payroll.recoveries_json = calc.advanceRecoveriesBreakdown;
+          payroll.tax_breakdown_json = calc.taxBreakdown;
         } else {
           payroll = this.payrollRepository.create({
             employee_id: emp.id,
@@ -181,6 +191,7 @@ export class PayrollService {
             net_salary: calc.netSalary,
             status: 'draft',
             recoveries_json: calc.advanceRecoveriesBreakdown,
+            tax_breakdown_json: calc.taxBreakdown,
           });
         }
 

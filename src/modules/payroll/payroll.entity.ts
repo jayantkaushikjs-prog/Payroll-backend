@@ -44,6 +44,9 @@ export class Payroll {
   @Column({ type: 'json', nullable: true })
   recoveries_json: { advanceId: number; amount: number }[];
 
+  @Column({ type: 'json', nullable: true })
+  tax_breakdown_json: any;
+
   @CreateDateColumn()
   generated_at: Date;
 
