@@ -18,20 +18,21 @@ export class TaxService {
 
   async findAll(): Promise<TaxSlab[]> {
     return this.taxSlabRepository.find({
-      order: { financial_year: 'DESC', regime: 'ASC', from_amount: 'ASC' },
+      where: { regime: 'new' },
+      order: { financial_year: 'DESC', from_amount: 'ASC' },
     });
   }
 
   async findByFinancialYear(financialYear: string): Promise<TaxSlab[]> {
     return this.taxSlabRepository.find({
-      where: { financial_year: financialYear },
+      where: { financial_year: financialYear, regime: 'new' },
       order: { from_amount: 'ASC' },
     });
   }
 
   async findByFinancialYearAndRegime(financialYear: string, regime: string): Promise<TaxSlab[]> {
     return this.taxSlabRepository.find({
-      where: { financial_year: financialYear, regime },
+      where: { financial_year: financialYear, regime: 'new' },
       order: { from_amount: 'ASC' },
     });
   }

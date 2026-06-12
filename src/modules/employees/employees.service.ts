@@ -7,6 +7,7 @@ import { UpdateEmployeeDto } from './dto/update-employee.dto';
 import { Payroll } from '../payroll/payroll.entity';
 import { SalaryStructure } from '../salary-structures/salary-structure.entity';
 import { EmployeeAdvance } from '../advances/employee-advance.entity';
+import { calculateAnnualTax } from '../../utils/tax-calculator.util';
 
 @Injectable()
 export class EmployeesService {
@@ -346,8 +347,10 @@ export class EmployeesService {
         // Expected Tax
         let tax = 0;
         if (employee.tax_deduction !== false) {
-          // Simple slab rate emulation or 10% estimation
-          tax = monthlyGross > 50000 ? monthlyGross * 0.10 : 0;
+          const taxRegime = employee.tax_regime || 'new';
+          const projectedAnnualIncome = monthlyGross * 12;
+          const totalAnnualTax = calculateAnnualTax(projectedAnnualIncome, taxRegime);
+          tax = Number((totalAnnualTax / 12).toFixed(2));
         }
 
         const net = monthlyGross - pf - tax;

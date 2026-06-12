@@ -9,6 +9,7 @@ import { PFService } from '../pf/pf.service';
 import { TaxService } from '../tax/tax.service';
 import { AdvancesService } from '../advances/advances.service';
 import { ExpensesService } from '../expenses/expenses.service';
+import { calculateAnnualTax } from '../../utils/tax-calculator.util';
 
 @Injectable()
 export class PayrollService {
@@ -76,18 +77,7 @@ export class PayrollService {
       let totalAnnualTax = 0;
 
       if (taxSlabs.length > 0) {
-        for (const slab of taxSlabs) {
-          const from = Number(slab.from_amount);
-          const to = slab.to_amount ? Number(slab.to_amount) : Infinity;
-          const rate = Number(slab.percentage) / 100;
-
-          if (projectedAnnualIncome > from) {
-            const taxableInSlab = Math.min(projectedAnnualIncome, to) - from;
-            if (taxableInSlab > 0) {
-              totalAnnualTax += taxableInSlab * rate;
-            }
-          }
-        }
+        totalAnnualTax = calculateAnnualTax(projectedAnnualIncome, taxRegime, taxSlabs);
       }
       taxDeduction = Number((totalAnnualTax / 12).toFixed(2));
     }
