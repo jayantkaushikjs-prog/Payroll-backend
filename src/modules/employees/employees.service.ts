@@ -376,7 +376,7 @@ export class EmployeesService {
         // Expected PF
         let pf = 0;
         if (employee.pf_deduction !== false) {
-          pf = Math.min(Number(structure.basic_salary) * pfRate, maxPfCap);
+          pf = Math.min(Number(structure.gross_salary) * pfRate, maxPfCap);
         }
 
         // Expected Tax (TDS)

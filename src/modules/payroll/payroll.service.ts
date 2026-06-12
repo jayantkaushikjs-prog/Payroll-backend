@@ -61,8 +61,7 @@ export class PayrollService {
     let pfDeduction = 0;
     if (employee.pf_deduction !== false) {
       const pfSettings = await this.pfService.findActiveAtDate(`${year}-${String(month).padStart(2, '0')}-01`);
-      const payableBasic = Math.max(0, basicSalary - ((basicSalary / daysInMonth) * nonPayableDays));
-      const calculatedPf = Number((payableBasic * (Number(pfSettings.employee_contribution_rate) / 100)).toFixed(2));
+      const calculatedPf = Number((payableGross * (Number(pfSettings.employee_contribution_rate) / 100)).toFixed(2));
       const maxPfCap = pfSettings.max_pf_cap ? Number(pfSettings.max_pf_cap) : 1800.00;
       pfDeduction = Math.min(maxPfCap, calculatedPf); // Configurable PF cap
     }
@@ -340,13 +339,13 @@ export class PayrollService {
       if (pr.employee && pr.employee.pf_deduction !== false) {
         try {
           const structure = await this.salaryStructuresService.findActiveByEmployee(pr.employee_id);
-          const basicSalary = Number(structure.basic_salary);
+          const grossSalary = Number(structure.gross_salary);
           
           const npdRecord = await this.nonPayableDaysService.findByEmployeeMonthAndYear(pr.employee_id, month, year);
           const nonPayableDays = npdRecord ? Number(npdRecord.days) : 0;
           
-          const payableBasic = Math.max(0, basicSalary - ((basicSalary / daysInMonth) * nonPayableDays));
-          const employer_pf = Math.min(1800, Number((payableBasic * employerContributionRate).toFixed(2)));
+          const payableGross = Math.max(0, grossSalary - ((grossSalary / daysInMonth) * nonPayableDays));
+          const employer_pf = Math.min(1800, Number((payableGross * employerContributionRate).toFixed(2)));
           
           totalEmployerPF += employer_pf;
         } catch (err) {

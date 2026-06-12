@@ -32,8 +32,8 @@ export class SalaryStructuresService {
       const pfSettings = await this.pfService.findActiveAtDate(createSalaryStructureDto.effective_from);
       const employerContributionRate = Number(pfSettings.employer_contribution_rate) / 100;
       
-      const gross_salary_uncapped = ctc / (1 + basicRatio * employerContributionRate);
-      if (basicRatio * gross_salary_uncapped * employerContributionRate > 1800) {
+      const gross_salary_uncapped = ctc / (1 + employerContributionRate);
+      if (gross_salary_uncapped * employerContributionRate > 1800) {
         gross_salary = ctc - 1800;
       } else {
         gross_salary = gross_salary_uncapped;
