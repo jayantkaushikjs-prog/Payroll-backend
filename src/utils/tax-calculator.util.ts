@@ -38,7 +38,8 @@ export function calculateAnnualTaxWithBreakdown(
   financialYear?: string
 ): TaxBreakdown {
   const fy = financialYear && TAX_CONFIG[financialYear] ? financialYear : DEFAULT_FY;
-  const config = TAX_CONFIG[fy];
+  const activeRegime = regime === 'old' ? 'old' : 'new';
+  const config = TAX_CONFIG[fy][activeRegime];
 
   // 1. Apply Standard Deduction
   const standardDeduction = config.standardDeduction;
@@ -81,11 +82,11 @@ export function calculateAnnualTaxWithBreakdown(
 
   baseTax = Number(baseTax.toFixed(2));
 
-  // 4. Section 87A Rebate with Marginal Relief at 12L threshold
+  // 4. Section 87A Rebate with Marginal Relief (Marginal Relief is New Regime specific)
   let rebate = 0;
   if (taxableIncome <= config.rebate.threshold) {
     rebate = baseTax; // Full rebate up to tax amount
-  } else {
+  } else if (activeRegime === 'new') {
     // Check marginal relief: rebate = baseTax - (taxableIncome - threshold)
     const excessIncome = taxableIncome - config.rebate.threshold;
     if (baseTax > excessIncome) {

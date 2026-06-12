@@ -51,6 +51,24 @@ function runTests() {
   assert(monthlyTds1 === 0, 'TC7: Monthly TDS for 33,183 monthly gross should be 0');
   assert(Math.abs(monthlyTds2 - 26603.20) < 5, 'TC7: Monthly TDS for 2,08,183 monthly gross should be approx 26,603');
 
+  // 8. User validation test case: Gross Salary 14,78,400, expected tax ₹94,130
+  const userTestCase = calculateAnnualTaxWithBreakdown(1478400);
+  assert(userTestCase.taxableIncome === 1403400, 'User TC: Taxable income should be 1,403,400');
+  assert(Math.abs(userTestCase.finalTax - 94130) < 1, 'User TC: Final tax should be exactly 94,130');
+
+  // 9. Comparison tests at ₹15L Gross
+  const newRegime15L = calculateAnnualTaxWithBreakdown(1500000, 'new');
+  assert(newRegime15L.taxableIncome === 1425000, 'TC9 New: Taxable income should be 1,425,000');
+  assert(newRegime15L.baseTax === 93750, 'TC9 New: Base tax should be 93,750');
+  assert(newRegime15L.cess === 3750, 'TC9 New: Cess should be 3,750');
+  assert(newRegime15L.finalTax === 97500, 'TC9 New: Total tax should be 97,500');
+
+  const oldRegime15L = calculateAnnualTaxWithBreakdown(1500000, 'old');
+  assert(oldRegime15L.taxableIncome === 1450000, 'TC9 Old: Taxable income should be 1,450,000');
+  assert(oldRegime15L.baseTax === 247500, 'TC9 Old: Base tax should be 2,47,500');
+  assert(oldRegime15L.cess === 9900, 'TC9 Old: Cess should be 9,900');
+  assert(oldRegime15L.finalTax === 257400, 'TC9 Old: Total tax should be 257,400');
+
   console.log('\nAll Unit Tests Passed Successfully! 🎉');
 }
 

@@ -1,4 +1,4 @@
-import { IsNotEmpty, IsNumber, IsDateString, Max, Min } from 'class-validator';
+import { IsNotEmpty, IsNumber, IsDateString, Max, Min, IsOptional } from 'class-validator';
 
 export class CreatePFSettingsDto {
   @IsNotEmpty({ message: 'Employee contribution rate is required' })
@@ -12,6 +12,11 @@ export class CreatePFSettingsDto {
   @Min(0)
   @Max(100)
   employer_contribution_rate: number;
+
+  @IsNumber()
+  @Min(0)
+  @IsOptional()
+  max_pf_cap?: number;
 
   @IsNotEmpty({ message: 'Effective date is required' })
   @IsDateString({}, { message: 'Effective date must be a valid ISO date string (YYYY-MM-DD)' })

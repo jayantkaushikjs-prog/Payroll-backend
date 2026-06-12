@@ -114,7 +114,13 @@ export class SalaryStructuresService {
         headers.forEach((header, index) => {
           const val = values[index]?.trim();
           if (header === 'employee code' || header === 'employee_code') data.employee_code = val;
-          else if (header === 'ctc' || header === 'monthly ctc' || header === 'monthly_ctc') data.ctc = val;
+          else if (header === 'ctc' || header === 'monthly ctc' || header === 'monthly_ctc') {
+            data.ctc = val;
+            data.is_annual = false;
+          } else if (header === 'annual ctc' || header === 'annual_ctc') {
+            data.ctc = val;
+            data.is_annual = true;
+          }
           else if (header === 'effective from' || header === 'effective_from' || header === 'effective date' || header === 'effective_date') data.effective_from = val;
           else if (header === 'basic percent' || header === 'basic_percent') data.basic_percent = val;
           else if (header === 'hra percent' || header === 'hra_percent') data.hra_percent = val;
@@ -131,10 +137,14 @@ export class SalaryStructuresService {
           continue;
         }
 
-        const ctcNum = Number(data.ctc);
+        let ctcNum = Number(data.ctc);
         if (isNaN(ctcNum) || ctcNum <= 0) {
           errors.push(`Row ${i + 1}: CTC must be a positive number`);
           continue;
+        }
+
+        if (data.is_annual) {
+          ctcNum = Number((ctcNum / 12).toFixed(2));
         }
 
         let basicPercent = 50;

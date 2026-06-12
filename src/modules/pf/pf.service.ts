@@ -19,6 +19,9 @@ export class PFService {
     if (settings) {
       settings.employee_contribution_rate = createDto.employee_contribution_rate;
       settings.employer_contribution_rate = createDto.employer_contribution_rate;
+      if (createDto.max_pf_cap !== undefined) {
+        settings.max_pf_cap = createDto.max_pf_cap;
+      }
     } else {
       settings = this.pfSettingsRepository.create(createDto);
     }
@@ -46,6 +49,7 @@ export class PFService {
       const defaultSetting = new PFSettings();
       defaultSetting.employee_contribution_rate = 12.00;
       defaultSetting.employer_contribution_rate = 12.00;
+      defaultSetting.max_pf_cap = 1800.00;
       defaultSetting.effective_date = '1970-01-01';
       return defaultSetting;
     }

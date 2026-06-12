@@ -63,7 +63,8 @@ export class PayrollService {
       const pfSettings = await this.pfService.findActiveAtDate(`${year}-${String(month).padStart(2, '0')}-01`);
       const payableBasic = Math.max(0, basicSalary - ((basicSalary / daysInMonth) * nonPayableDays));
       const calculatedPf = Number((payableBasic * (Number(pfSettings.employee_contribution_rate) / 100)).toFixed(2));
-      pfDeduction = Math.min(1800, calculatedPf); // Cap PF at 1800 max per month
+      const maxPfCap = pfSettings.max_pf_cap ? Number(pfSettings.max_pf_cap) : 1800.00;
+      pfDeduction = Math.min(maxPfCap, calculatedPf); // Configurable PF cap
     }
 
     // 5. Tax Deduction (Progressive Slabs)
@@ -74,7 +75,33 @@ export class PayrollService {
       const taxRegime = employee.tax_regime || 'new';
       const taxSlabs = await this.taxService.findByFinancialYearAndRegime(financialYear, taxRegime);
 
-      const projectedAnnualIncome = payableGross * 12;
+      // Fetch YTD gross and tax paid in locked/disbursed records of current financial year
+      const payrollRecords = await this.payrollRepository.find({
+        where: { employee_id: employeeId },
+      });
+
+      const ytdRecords = payrollRecords.filter(p => {
+        if (p.status !== 'locked' && p.status !== 'disbursed') return false;
+        if (this.getFinancialYear(p.month, p.year) !== financialYear) return false;
+        if (p.year < year) return true;
+        if (p.year === year && p.month < month) return true;
+        return false;
+      });
+
+      // Handle any missing historical records in the current financial year by assuming standard gross
+      const completedMonthsCount = month >= 4 ? month - 4 : 8 + month;
+      const dbRecordsCount = ytdRecords.length;
+      const missingMonthsCount = Math.max(0, completedMonthsCount - dbRecordsCount);
+      const missingGross = missingMonthsCount * grossSalary;
+
+      const grossPaidYTD = ytdRecords.reduce((sum, p) => sum + (Number(p.gross_salary) - Number(p.non_payable_deduction)), 0) + missingGross;
+      const taxPaidYTD = ytdRecords.reduce((sum, p) => sum + Number(p.tax_deduction), 0);
+
+      const remainingMonthsExcludingCurrent = month >= 4 ? 15 - month : 3 - month;
+      const remainingPayrollMonths = remainingMonthsExcludingCurrent + 1;
+
+      // Projected Annual Income = YTD Gross Paid + Current Month Earnings + Expected Earnings for Remaining Months (standard monthly gross)
+      const projectedAnnualIncome = grossPaidYTD + payableGross + (grossSalary * remainingMonthsExcludingCurrent);
 
       const breakdown = calculateAnnualTaxWithBreakdown(
         projectedAnnualIncome,
@@ -83,11 +110,38 @@ export class PayrollService {
         financialYear
       );
 
-      taxDeduction = Number((breakdown.finalTax / 12).toFixed(2));
+      const remainingAnnualTax = Math.max(0, breakdown.finalTax - taxPaidYTD);
+
+      taxDeduction = Number((remainingAnnualTax / remainingPayrollMonths).toFixed(2));
+
+      const ctc = Number(structure.ctc);
+      const employerPf = ctc - grossSalary;
+
       taxBreakdown = {
-        ...breakdown,
+        ctc,
+        grossSalary,
+        employerPf,
+        projectedAnnualIncome,
+        standardDeduction: breakdown.standardDeduction,
+        taxableIncome: breakdown.taxableIncome,
+        baseTax: breakdown.baseTax,
+        rebate: breakdown.rebate,
+        surcharge: breakdown.surcharge,
+        cess: breakdown.cess,
+        totalAnnualTaxLiability: breakdown.finalTax,
+        taxPaidYTD: taxPaidYTD,
+        remainingAnnualTax: remainingAnnualTax,
+        remainingPayrollMonths: remainingPayrollMonths,
         monthlyTDS: taxDeduction,
+        slabs: breakdown.slabs,
       };
+
+      console.log('--- Tax Calculation Audit ---', {
+        employeeName: employee.name,
+        month,
+        year,
+        ...taxBreakdown
+      });
     }
 
     // 6. Advance Recovery

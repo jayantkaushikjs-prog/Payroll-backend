@@ -1,12 +1,13 @@
 import { Injectable, ConflictException, NotFoundException } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
-import { Between, Repository } from 'typeorm';
+import { Between, Repository, LessThanOrEqual } from 'typeorm';
 import { Employee } from './employee.entity';
 import { CreateEmployeeDto } from './dto/create-employee.dto';
 import { UpdateEmployeeDto } from './dto/update-employee.dto';
 import { Payroll } from '../payroll/payroll.entity';
 import { SalaryStructure } from '../salary-structures/salary-structure.entity';
 import { EmployeeAdvance } from '../advances/employee-advance.entity';
+import { PFSettings } from '../pf/pf-settings.entity';
 import { calculateAnnualTax } from '../../utils/tax-calculator.util';
 
 @Injectable()
@@ -20,6 +21,8 @@ export class EmployeesService {
     private salaryStructureRepository: Repository<SalaryStructure>,
     @InjectRepository(EmployeeAdvance)
     private advanceRepository: Repository<EmployeeAdvance>,
+    @InjectRepository(PFSettings)
+    private pfSettingsRepository: Repository<PFSettings>,
   ) {}
 
   async create(createEmployeeDto: CreateEmployeeDto): Promise<Employee> {
@@ -311,9 +314,14 @@ export class EmployeesService {
   async getFinancialSummary(employeeId: number, year: number): Promise<any> {
     const employee = await this.findOne(employeeId);
 
-    // Get all disbursed payrolls for the employee in that year
-    const payrolls = await this.payrollRepository.find({
-      where: { employee_id: employeeId, year, status: 'disbursed' },
+    const targetFY = `${year}-${year + 1}`;
+    // Get all disbursed payrolls for the employee in that target financial year
+    const allPayrolls = await this.payrollRepository.find({
+      where: { employee_id: employeeId, status: 'disbursed' },
+    });
+    const payrolls = allPayrolls.filter(p => {
+      const fy = p.month >= 4 ? `${p.year}-${p.year + 1}` : `${p.year - 1}-${p.year}`;
+      return fy === targetFY;
     });
 
     const amountPaid = payrolls.reduce((sum, p) => sum + Number(p.net_salary), 0);
@@ -333,25 +341,46 @@ export class EmployeesService {
     if (structure) {
       const monthlyGross = Number(structure.gross_salary);
 
-      // Find which months in the year already have a disbursed payroll
+      // Find which months in the financial year already have a disbursed payroll
+      const fyMonths = [4, 5, 6, 7, 8, 9, 10, 11, 12, 1, 2, 3];
       const paidMonths = payrolls.map(p => p.month);
-      const remainingMonths = Array.from({ length: 12 }, (_, i) => i + 1).filter(m => !paidMonths.includes(m));
+      const remainingMonths = fyMonths.filter(m => !paidMonths.includes(m));
+
+      // Fetch dynamic PFSettings based on current date
+      const pfSettings = await this.pfSettingsRepository.findOne({
+        where: {
+          effective_date: LessThanOrEqual(new Date().toISOString().split('T')[0]),
+        },
+        order: { effective_date: 'DESC' },
+      });
+      const pfRate = pfSettings ? Number(pfSettings.employee_contribution_rate) / 100 : 0.12;
+      const maxPfCap = pfSettings ? Number(pfSettings.max_pf_cap) : 1800;
+
+      // 1. Calculate projected annual gross: YTD Gross (excluding non_payable_deductions) + expected remaining months gross
+      const grossPaidYTD = payrolls.reduce((sum, p) => sum + (Number(p.gross_salary) - Number(p.non_payable_deduction)), 0);
+      const projectedAnnualGross = grossPaidYTD + (monthlyGross * remainingMonths.length);
+
+      // 2. Calculate total expected annual tax
+      let totalAnnualTax = 0;
+      if (employee.tax_deduction !== false) {
+        const taxRegime = employee.tax_regime || 'new';
+        totalAnnualTax = calculateAnnualTax(projectedAnnualGross, taxRegime, undefined, targetFY);
+      }
+
+      // 3. Calculate remaining annual tax and distribute to remaining months
+      const remainingAnnualTax = Math.max(0, totalAnnualTax - taxDeducted);
+      const remainingMonthsCount = remainingMonths.length;
+      const monthlyTdsRemaining = remainingMonthsCount > 0 ? Number((remainingAnnualTax / remainingMonthsCount).toFixed(2)) : 0;
 
       for (const m of remainingMonths) {
         // Expected PF
         let pf = 0;
         if (employee.pf_deduction !== false) {
-          pf = Math.min(Number(structure.basic_salary) * 0.12, 1800);
+          pf = Math.min(Number(structure.basic_salary) * pfRate, maxPfCap);
         }
 
-        // Expected Tax
-        let tax = 0;
-        if (employee.tax_deduction !== false) {
-          const taxRegime = employee.tax_regime || 'new';
-          const projectedAnnualIncome = monthlyGross * 12;
-          const totalAnnualTax = calculateAnnualTax(projectedAnnualIncome, taxRegime);
-          tax = Number((totalAnnualTax / 12).toFixed(2));
-        }
+        // Expected Tax (TDS)
+        const tax = employee.tax_deduction !== false ? monthlyTdsRemaining : 0;
 
         const net = monthlyGross - pf - tax;
         amountToBePaid += net;
@@ -369,6 +398,9 @@ export class EmployeesService {
     const totalAdvancesRepaid = advances.reduce((sum, a) => sum + Number(a.total_recovered), 0);
     const remainingAdvanceBalance = totalAdvancesTaken - totalAdvancesRepaid;
 
+    const paidMonthsCount = payrolls.length;
+    const remainingMonthsCount = structure ? (12 - paidMonthsCount) : 0;
+
     return {
       year,
       amountPaid,
@@ -381,6 +413,16 @@ export class EmployeesService {
       totalAdvancesTaken,
       totalAdvancesRepaid,
       remainingAdvanceBalance,
+      paidMonthsCount,
+      remainingMonthsCount,
+      structure: structure ? {
+        ctc: Number(structure.ctc),
+        gross_salary: Number(structure.gross_salary),
+        basic_salary: Number(structure.basic_salary),
+        hra: Number(structure.hra),
+        special_allowance: Number(structure.special_allowance),
+        other_allowance: Number(structure.other_allowance),
+      } : null,
     };
   }
 }

@@ -6,9 +6,10 @@ import { EmployeesController } from './employees.controller';
 import { Payroll } from '../payroll/payroll.entity';
 import { SalaryStructure } from '../salary-structures/salary-structure.entity';
 import { EmployeeAdvance } from '../advances/employee-advance.entity';
+import { PFSettings } from '../pf/pf-settings.entity';
 
 @Module({
-  imports: [TypeOrmModule.forFeature([Employee, Payroll, SalaryStructure, EmployeeAdvance])],
+  imports: [TypeOrmModule.forFeature([Employee, Payroll, SalaryStructure, EmployeeAdvance, PFSettings])],
   providers: [EmployeesService],
   controllers: [EmployeesController],
   exports: [EmployeesService],

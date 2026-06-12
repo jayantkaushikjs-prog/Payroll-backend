@@ -32,7 +32,7 @@ export class TaxService {
 
   async findByFinancialYearAndRegime(financialYear: string, regime: string): Promise<TaxSlab[]> {
     return this.taxSlabRepository.find({
-      where: { financial_year: financialYear, regime: 'new' },
+      where: { financial_year: financialYear, regime },
       order: { from_amount: 'ASC' },
     });
   }
