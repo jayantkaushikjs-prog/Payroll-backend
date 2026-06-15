@@ -89,6 +89,7 @@ export class SalaryStructuresService {
     return this.salaryStructuresRepository.find({
       where: { is_active: true },
       relations: ['employee'],
+      order: { id: 'DESC' },
     });
   }
 

@@ -63,6 +63,9 @@ export class Employee {
   @Column({ type: 'decimal', precision: 12, scale: 2, default: 0 })
   appraisal: number;
 
+  @Column({ type: 'date', nullable: true })
+  appraisal_effective_date: string;
+
   @Column({ type: 'decimal', precision: 12, scale: 2, default: 0 })
   leave_encashment: number;
 

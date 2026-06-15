@@ -43,8 +43,22 @@ export class PayrollService {
       throw new BadRequestException(`Salary structure is missing for employee ${employee.name}`);
     }
 
-    const grossSalary = Number(structure.gross_salary);
-    const basicSalary = Number(structure.basic_salary);
+    let grossSalary = Number(structure.gross_salary);
+    let basicSalary = Number(structure.basic_salary);
+
+    // Apply appraisal if active and effective
+    if (Number(employee.appraisal) > 0 && employee.appraisal_effective_date) {
+      const payrollDate = new Date(year, month - 1, 1);
+      const effectiveDate = new Date(employee.appraisal_effective_date);
+      const payrollMonthStart = new Date(payrollDate.getFullYear(), payrollDate.getMonth(), 1);
+      const effectiveMonthStart = new Date(effectiveDate.getFullYear(), effectiveDate.getMonth(), 1);
+      if (payrollMonthStart >= effectiveMonthStart) {
+        grossSalary += Number(employee.appraisal);
+        if (Number(structure.gross_salary) > 0) {
+          basicSalary = Number(((Number(structure.basic_salary) / Number(structure.gross_salary)) * grossSalary).toFixed(2));
+        }
+      }
+    }
 
     // 2. Compute Days in Month
     const daysInMonth = new Date(year, month, 0).getDate();
@@ -113,8 +127,11 @@ export class PayrollService {
 
       taxDeduction = Number((remainingAnnualTax / remainingPayrollMonths).toFixed(2));
 
-      const ctc = Number(structure.ctc);
-      const employerPf = ctc - grossSalary;
+      const baseGross = Number(structure.gross_salary);
+      const baseCtc = Number(structure.ctc);
+      const baseEmployerPf = Math.max(0, baseCtc - baseGross);
+      const ctc = grossSalary + baseEmployerPf;
+      const employerPf = baseEmployerPf;
 
       taxBreakdown = {
         ctc,
@@ -148,10 +165,66 @@ export class PayrollService {
     let advanceRecovery = 0;
     const advanceRecoveriesBreakdown = [];
     
+    // Check if there is an active advance salary for this upcoming month
+    const hasAdvanceSalaryThisMonth = activeAdvances.some(adv => {
+      if (!adv.is_advance_salary) return false;
+      const issueDate = new Date(adv.date);
+      const issueMonth = issueDate.getMonth() + 1;
+      const issueYear = issueDate.getFullYear();
+      let upcomingMonth = issueMonth + 1;
+      let upcomingYear = issueYear;
+      if (upcomingMonth > 12) {
+        upcomingMonth = 1;
+        upcomingYear += 1;
+      }
+      return month === upcomingMonth && year === upcomingYear;
+    });
+
     // Available salary left for advances after mandatory government/statutory deductions (PF and Tax)
     let availableForAdvances = Math.max(0, Number((payableGross - pfDeduction - taxDeduction).toFixed(2)));
 
+    // Process Advance Salary first if present for this month
     for (const adv of activeAdvances) {
+      if (adv.is_advance_salary) {
+        const issueDate = new Date(adv.date);
+        const issueMonth = issueDate.getMonth() + 1;
+        const issueYear = issueDate.getFullYear();
+        let upcomingMonth = issueMonth + 1;
+        let upcomingYear = issueYear;
+        if (upcomingMonth > 12) {
+          upcomingMonth = 1;
+          upcomingYear += 1;
+        }
+        if (month === upcomingMonth && year === upcomingYear) {
+          const recovery = Number(adv.remaining_amount);
+          advanceRecovery += recovery;
+          advanceRecoveriesBreakdown.push({
+            advanceId: adv.id,
+            amount: recovery,
+          });
+          availableForAdvances = Math.max(0, Number((availableForAdvances - recovery).toFixed(2)));
+        }
+      }
+    }
+
+    // Now process normal advances
+    for (const adv of activeAdvances) {
+      // Skip if already processed as advance salary above
+      if (adv.is_advance_salary) {
+        const issueDate = new Date(adv.date);
+        const issueMonth = issueDate.getMonth() + 1;
+        const issueYear = issueDate.getFullYear();
+        let upcomingMonth = issueMonth + 1;
+        let upcomingYear = issueYear;
+        if (upcomingMonth > 12) {
+          upcomingMonth = 1;
+          upcomingYear += 1;
+        }
+        if (month === upcomingMonth && year === upcomingYear) {
+          continue;
+        }
+      }
+
       if (availableForAdvances <= 0) {
         break; // Keep remaining deduction pending for further months
       }
@@ -180,7 +253,10 @@ export class PayrollService {
     advanceRecovery = Number(advanceRecovery.toFixed(2));
 
     // 7. Net Salary
-    const netSalary = Number(Math.max(0, payableGross - pfDeduction - taxDeduction - advanceRecovery).toFixed(2));
+    let netSalary = Number(Math.max(0, payableGross - pfDeduction - taxDeduction - advanceRecovery).toFixed(2));
+    if (hasAdvanceSalaryThisMonth) {
+      netSalary = 0;
+    }
 
     return {
       employee,
@@ -337,20 +413,9 @@ export class PayrollService {
       totalGrossSalaries += Number(pr.gross_salary);
 
       if (pr.employee && pr.employee.pf_deduction !== false) {
-        try {
-          const structure = await this.salaryStructuresService.findActiveByEmployee(pr.employee_id);
-          const grossSalary = Number(structure.gross_salary);
-          
-          const npdRecord = await this.nonPayableDaysService.findByEmployeeMonthAndYear(pr.employee_id, month, year);
-          const nonPayableDays = npdRecord ? Number(npdRecord.days) : 0;
-          
-          const payableGross = Math.max(0, grossSalary - ((grossSalary / daysInMonth) * nonPayableDays));
-          const employer_pf = Math.min(1800, Number((payableGross * employerContributionRate).toFixed(2)));
-          
-          totalEmployerPF += employer_pf;
-        } catch (err) {
-          totalEmployerPF += Number(pr.pf_deduction);
-        }
+        const payableGross = Math.max(0, Number(pr.gross_salary) - Number(pr.non_payable_deduction));
+        const employer_pf = Math.min(1800, Number((payableGross * employerContributionRate).toFixed(2)));
+        totalEmployerPF += employer_pf;
       }
     }
 

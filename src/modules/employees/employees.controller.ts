@@ -81,6 +81,23 @@ export class EmployeesController {
     return this.employeesService.getFinancialSummary(+id, yr);
   }
 
+  @Get(':id/export-financials')
+  async exportFinancials(
+    @Param('id') id: string,
+    @Query('startYear') startYear: string,
+    @Query('endYear') endYear: string,
+    @Res() res: Response,
+  ) {
+    const sYr = startYear ? parseInt(startYear, 10) : new Date().getFullYear() - 1;
+    const eYr = endYear ? parseInt(endYear, 10) : new Date().getFullYear();
+    const csvContent = await this.employeesService.generateFinancialsCsv(+id, sYr, eYr);
+    const employee = await this.employeesService.findOne(+id);
+    const filename = `${employee.name.replace(/\s+/g, '_')}_financials_${sYr}_to_${eYr}.csv`;
+    res.setHeader('Content-Type', 'text/csv');
+    res.setHeader('Content-Disposition', `attachment; filename=${filename}`);
+    return res.status(200).send(csvContent);
+  }
+
   @Put(':id')
   @RequirePermissions(Permission.UPDATE_EMPLOYEE)
   update(@Param('id') id: string, @Body() updateEmployeeDto: UpdateEmployeeDto) {

@@ -138,6 +138,7 @@ export class AdvancesService {
     }
     if (updateDto.start_month !== undefined) adv.start_month = updateDto.start_month;
     if (updateDto.start_year !== undefined) adv.start_year = updateDto.start_year;
+    if (updateDto.is_advance_salary !== undefined) adv.is_advance_salary = updateDto.is_advance_salary;
 
     return this.advancesRepository.save(adv);
   }

@@ -134,6 +134,10 @@ export class UpdateEmployeeDto {
   appraisal?: number;
 
   @IsOptional()
+  @IsDateString({}, { message: 'Appraisal effective date must be a valid ISO date string (YYYY-MM-DD)' })
+  appraisal_effective_date?: string;
+
+  @IsOptional()
   @IsNumber({}, { message: 'Leave Encashment must be a number' })
   leave_encashment?: number;
 

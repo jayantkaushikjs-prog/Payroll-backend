@@ -1,4 +1,4 @@
-import { IsNotEmpty, IsNumber, IsOptional, IsString, Max, Min, IsIn, IsDateString } from 'class-validator';
+import { IsNotEmpty, IsNumber, IsOptional, IsString, Max, Min, IsIn, IsDateString, IsBoolean } from 'class-validator';
 
 export class CreateAdvanceDto {
   @IsNotEmpty({ message: 'Employee ID is required' })
@@ -38,4 +38,8 @@ export class CreateAdvanceDto {
   @Min(2000, { message: 'Start year must be at least 2000' })
   @Max(2100, { message: 'Start year cannot exceed 2100' })
   start_year: number;
+
+  @IsOptional()
+  @IsBoolean()
+  is_advance_salary?: boolean;
 }

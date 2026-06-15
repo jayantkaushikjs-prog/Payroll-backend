@@ -45,7 +45,7 @@ export class EmployeesService {
   }
 
   async findAll(): Promise<Employee[]> {
-    return this.employeesRepository.find({ order: { employee_code: 'ASC' } });
+    return this.employeesRepository.find({ order: { id: 'DESC' } });
   }
 
   async findByCode(code: string): Promise<Employee | null> {
@@ -424,5 +424,98 @@ export class EmployeesService {
         other_allowance: Number(structure.other_allowance),
       } : null,
     };
+  }
+
+  async generateFinancialsCsv(employeeId: number, startYear: number, endYear: number): Promise<string> {
+    const employee = await this.findOne(employeeId);
+    
+    // Fetch all payrolls for this employee in the desired tenure
+    const payrolls = await this.payrollRepository.find({
+      where: { employee_id: employeeId },
+      order: { year: 'ASC', month: 'ASC' },
+    });
+
+    // Filter by year range
+    const filteredPayrolls = payrolls.filter(p => p.year >= startYear && p.year <= endYear);
+
+    const monthNames = [
+      'January', 'February', 'March', 'April', 'May', 'June',
+      'July', 'August', 'September', 'October', 'November', 'December'
+    ];
+
+    const lines: string[] = [];
+    lines.push(`Financial Report for Employee: ${employee.employee_code} - ${employee.name}`);
+    lines.push(`Tenure: ${startYear} to ${endYear}`);
+    lines.push('');
+    lines.push('MONTHLY PAYROLL RECORDS');
+    lines.push([
+      'Month',
+      'Year',
+      'Gross Salary',
+      'Non-Payable Deduction',
+      'PF Deduction',
+      'Tax Deduction',
+      'Advance Recovery',
+      'Net Salary',
+      'Status'
+    ].join(','));
+
+    for (const p of filteredPayrolls) {
+      lines.push([
+        monthNames[p.month - 1],
+        p.year,
+        p.gross_salary,
+        p.non_payable_deduction,
+        p.pf_deduction,
+        p.tax_deduction,
+        p.advance_recovery,
+        p.net_salary,
+        p.status
+      ].join(','));
+    }
+
+    lines.push('');
+    lines.push('ANNUAL FINANCIAL SUMMARIES');
+    lines.push([
+      'Financial Year',
+      'Total Gross Salary',
+      'Total Non-Payable Deduction',
+      'Total PF Deducted',
+      'Total Tax Deducted',
+      'Total Advance Recovered',
+      'Total Net Salary Paid'
+    ].join(','));
+
+    // Group by financial year
+    const fyGroups: Record<string, typeof filteredPayrolls> = {};
+    for (const p of filteredPayrolls) {
+      const fy = p.month >= 4 ? `${p.year}-${p.year + 1}` : `${p.year - 1}-${p.year}`;
+      if (!fyGroups[fy]) {
+        fyGroups[fy] = [];
+      }
+      fyGroups[fy].push(p);
+    }
+
+    for (const fy of Object.keys(fyGroups).sort()) {
+      const group = fyGroups[fy];
+      const totalGross = group.reduce((sum, p) => sum + Number(p.gross_salary), 0).toFixed(2);
+      const totalNpd = group.reduce((sum, p) => sum + Number(p.non_payable_deduction), 0).toFixed(2);
+      const totalPF = group.reduce((sum, p) => sum + Number(p.pf_deduction), 0).toFixed(2);
+      const totalTax = group.reduce((sum, p) => sum + Number(p.tax_deduction), 0).toFixed(2);
+      const totalAdv = group.reduce((sum, p) => sum + Number(p.advance_recovery), 0).toFixed(2);
+      const totalNet = group.reduce((sum, p) => sum + Number(p.net_salary), 0).toFixed(2);
+
+      lines.push([
+        fy,
+        totalGross,
+        totalNpd,
+        totalPF,
+        totalTax,
+        totalAdv,
+        totalNet
+      ].join(','));
+    }
+
+    return lines.join('\n');
   }
 }

@@ -43,6 +43,9 @@ export class EmployeeAdvance {
   @Column({ default: false })
   is_fully_recovered: boolean;
 
+  @Column({ default: false })
+  is_advance_salary: boolean;
+
   @CreateDateColumn()
   created_at: Date;
 }
