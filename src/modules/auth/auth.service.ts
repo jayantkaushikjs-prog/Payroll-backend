@@ -77,7 +77,7 @@ export class AuthService {
       });
 
       if (!dbToken || dbToken.expiresAt < new Date()) {
-        throw new UnauthorizedException('Refresh token is invalid or expired');
+        throw new UnauthorizedException('Invalid Email or Password');
       }
 
       // Generate new access token
@@ -112,7 +112,7 @@ export class AuthService {
         refresh_token: newRefreshToken,
       };
     } catch (error) {
-      throw new UnauthorizedException('Refresh token is invalid or expired');
+      throw new UnauthorizedException('Invalid Email or Password');
     }
   }
 
