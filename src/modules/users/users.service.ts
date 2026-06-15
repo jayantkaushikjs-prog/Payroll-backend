@@ -41,13 +41,23 @@ export class UsersService {
       subject: 'Welcome to TH-PMS - Your Credentials',
       text: `Hello,\n\nYou have been added to TH-PMS.\n\nWebsite: http://localhost:5173\nRole: ${createUserDto.role}\nEmail: ${createUserDto.email}\nPassword: ${createUserDto.password}\n\nBest regards,\nTH-PMS Team`,
       html: `
-        <div style="font-family: Arial, sans-serif; padding: 20px; color: #333; max-width: 500px; margin: auto; border: 1px solid #e2e8f0; border-radius: 8px;">
+        <div style="font-family: Arial, sans-serif; padding: 20px; color: #333; max-width: 500px; margin: auto; border: 1px solid #e2e8f0; border-radius: 8px; text-align: center;">
+          <div style="margin-bottom: 10px;">
+            <svg width="64" height="64" viewBox="0 0 200 200" fill="none" xmlns="http://www.w3.org/2000/svg">
+              <rect width="200" height="200" fill="#ffffff" rx="16" />
+              <rect x="40" y="30" width="50" height="140" fill="#000000" rx="4" />
+              <rect x="110" y="30" width="50" height="140" fill="#000000" rx="4" />
+              <rect x="85" y="85" width="30" height="30" fill="#0ea5e9" transform="rotate(45 100 100)" />
+            </svg>
+          </div>
           <h2 style="color: #6366f1; margin-top: 0; border-bottom: 1px solid #e2e8f0; padding-bottom: 10px;">TH-PMS</h2>
-          <p>Your account has been created successfully. Here are your details:</p>
-          <p><strong>Website Link:</strong> <a href="http://localhost:5173" style="color: #6366f1;">http://localhost:5173</a></p>
-          <p><strong>Role:</strong> ${createUserDto.role}</p>
-          <p><strong>Email Address:</strong> ${createUserDto.email}</p>
-          <p><strong>Password:</strong> ${createUserDto.password}</p>
+          <div style="text-align: left;">
+            <p>Your account has been created successfully. Here are your details:</p>
+            <p><strong>Website Link:</strong> <a href="http://localhost:5173" style="color: #6366f1;">http://localhost:5173</a></p>
+            <p><strong>Role:</strong> ${createUserDto.role}</p>
+            <p><strong>Email Address:</strong> ${createUserDto.email}</p>
+            <p><strong>Password:</strong> ${createUserDto.password}</p>
+          </div>
         </div>
       `,
     };

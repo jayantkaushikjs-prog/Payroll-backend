@@ -3,6 +3,7 @@ import { JwtService } from '@nestjs/jwt';
 import { Request } from 'express';
 import { DataSource } from 'typeorm';
 import { BlacklistedToken } from '../../modules/auth/blacklisted-token.entity';
+import { User } from '../../modules/users/user.entity';
 
 @Injectable()
 export class JwtAuthGuard implements CanActivate {
@@ -30,8 +31,24 @@ export class JwtAuthGuard implements CanActivate {
       const payload = await this.jwtService.verifyAsync(token, {
         secret: 'PAYROLL_SECRET_JWT_KEY_987654321',
       });
+      
+      // Immediately check if the user has been blocked
+      const user = await this.dataSource
+        .getRepository(User)
+        .findOne({ where: { id: payload.sub } });
+        
+      if (!user) {
+        throw new UnauthorizedException('User account not found');
+      }
+      if (user.is_blocked) {
+        throw new UnauthorizedException('Your account has been blocked by an administrator');
+      }
+
       request['user'] = payload;
     } catch (error) {
+      if (error instanceof UnauthorizedException) {
+        throw error;
+      }
       throw new UnauthorizedException('Access token is invalid or expired');
     }
     return true;
