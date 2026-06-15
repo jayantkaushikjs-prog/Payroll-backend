@@ -24,6 +24,9 @@ export class User {
   })
   role: Role;
 
+  @Column({ default: false })
+  is_blocked: boolean;
+
   @CreateDateColumn()
   created_at: Date;
 }

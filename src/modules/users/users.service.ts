@@ -5,6 +5,7 @@ import { User } from './user.entity';
 import { CreateUserDto } from './dto/create-user.dto';
 import * as bcrypt from 'bcryptjs';
 import { Role } from '../../common/enums/role.enum';
+import { sendMail } from '../../common/utils/smtp-client';
 
 @Injectable()
 export class UsersService {
@@ -14,6 +15,10 @@ export class UsersService {
   ) {}
 
   async create(createUserDto: CreateUserDto): Promise<User> {
+    if (createUserDto.role === Role.SUPER_ADMIN) {
+      throw new BadRequestException('Creating a new Super Admin user is not allowed');
+    }
+
     const existing = await this.findByEmail(createUserDto.email);
     if (existing) {
       throw new ConflictException('Email already registered');
@@ -25,6 +30,54 @@ export class UsersService {
       password: hashedPassword,
     });
 
+    const saved = await this.usersRepository.save(user);
+
+    // Send credentials email to the newly created user
+    const sendGridApiKey = process.env.SENDGRID_API_KEY || process.env.SMTP_PASS || '';
+    const sendGridFrom = process.env.SENDGRID_FROM_EMAIL || process.env.SMTP_FROM || 'no-reply@payroll.com';
+
+    const mailOptions = {
+      to: saved.email,
+      subject: 'Welcome to TH-PMS - Your Credentials',
+      text: `Hello,\n\nYou have been added to TH-PMS.\n\nWebsite: http://localhost:5173\nRole: ${createUserDto.role}\nEmail: ${createUserDto.email}\nPassword: ${createUserDto.password}\n\nBest regards,\nTH-PMS Team`,
+      html: `
+        <div style="font-family: Arial, sans-serif; padding: 20px; color: #333; max-width: 500px; margin: auto; border: 1px solid #e2e8f0; border-radius: 8px;">
+          <h2 style="color: #6366f1; margin-top: 0; border-bottom: 1px solid #e2e8f0; padding-bottom: 10px;">TH-PMS</h2>
+          <p>Your account has been created successfully. Here are your details:</p>
+          <p><strong>Website Link:</strong> <a href="http://localhost:5173" style="color: #6366f1;">http://localhost:5173</a></p>
+          <p><strong>Role:</strong> ${createUserDto.role}</p>
+          <p><strong>Email Address:</strong> ${createUserDto.email}</p>
+          <p><strong>Password:</strong> ${createUserDto.password}</p>
+        </div>
+      `,
+    };
+
+    try {
+      await sendMail(
+        {
+          auth: sendGridApiKey ? { user: '', pass: sendGridApiKey } : undefined,
+          from: sendGridFrom,
+        },
+        mailOptions,
+      );
+      console.log(`[New User Mail] Credentials email sent successfully to ${saved.email}`);
+    } catch (err: any) {
+      console.error(`[New User Mail Error] Failed to send credentials email to ${saved.email}:`, err.message || err);
+    }
+
+    delete saved.password;
+    return saved;
+  }
+
+  async toggleBlockStatus(id: number, isBlocked: boolean): Promise<User> {
+    const user = await this.findById(id);
+    if (!user) {
+      throw new NotFoundException('User not found');
+    }
+    if (user.role === Role.SUPER_ADMIN) {
+      throw new BadRequestException('Super Admin cannot be blocked or unblocked');
+    }
+    user.is_blocked = isBlocked;
     const saved = await this.usersRepository.save(user);
     delete saved.password;
     return saved;

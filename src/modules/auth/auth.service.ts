@@ -34,6 +34,10 @@ export class AuthService {
       throw new UnauthorizedException('Invalid email or password');
     }
 
+    if (user.is_blocked) {
+      throw new UnauthorizedException('Your account has been blocked.');
+    }
+
     const isMatch = await bcrypt.compare(loginDto.password, user.password);
     if (!isMatch) {
       throw new UnauthorizedException('Invalid email or password');
@@ -238,6 +242,35 @@ export class AuthService {
 
     return {
       message: 'Password has been reset successfully.',
+    };
+  }
+
+  async changePassword(userId: number, currentPassword: string, newPassword: string) {
+    const user = await this.usersService.findById(userId);
+    if (!user) {
+      throw new UnauthorizedException('User not found');
+    }
+
+    // Get user with password field
+    const userWithPassword = await this.usersService.findByEmail(user.email);
+    if (!userWithPassword) {
+      throw new UnauthorizedException('User not found');
+    }
+
+    const isMatch = await bcrypt.compare(currentPassword, userWithPassword.password);
+    if (!isMatch) {
+      throw new BadRequestException('Current password is incorrect');
+    }
+
+    if (newPassword.length < 6) {
+      throw new BadRequestException('New password must be at least 6 characters');
+    }
+
+    userWithPassword.password = await bcrypt.hash(newPassword, 10);
+    await this.usersService.save(userWithPassword);
+
+    return {
+      message: 'Password changed successfully.',
     };
   }
 }

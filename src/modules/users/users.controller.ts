@@ -1,4 +1,4 @@
-import { Controller, Get, Post, Body, Param, Delete, UseGuards } from '@nestjs/common';
+import { Controller, Get, Post, Body, Param, Delete, UseGuards, Patch } from '@nestjs/common';
 import { UsersService } from './users.service';
 import { CreateUserDto } from './dto/create-user.dto';
 import { JwtAuthGuard } from '../../common/guards/jwt-auth.guard';
@@ -27,5 +27,11 @@ export class UsersController {
   @RequirePermissions(Permission.MANAGE_USERS)
   remove(@Param('id') id: string) {
     return this.usersService.remove(+id);
+  }
+
+  @Patch(':id/block')
+  @RequirePermissions(Permission.MANAGE_USERS)
+  toggleBlock(@Param('id') id: string, @Body('is_blocked') isBlocked: boolean) {
+    return this.usersService.toggleBlockStatus(+id, isBlocked);
   }
 }
