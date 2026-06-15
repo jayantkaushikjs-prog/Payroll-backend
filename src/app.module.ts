@@ -55,7 +55,7 @@ import * as bcrypt from 'bcryptjs';
         RefreshToken,
         BlacklistedToken,
       ],
-      synchronize: true, // For development ease. Production should use migrations.
+      synchronize: false, // For development ease. Production should use migrations.
     }),
     TypeOrmModule.forFeature([
       User,
@@ -97,33 +97,28 @@ export class AppModule implements OnApplicationBootstrap {
   ) {}
 
   async onApplicationBootstrap() {
+    // Seeding is now managed via command: npm run seed
+  }
+
+  async seed() {
     await this.seedUsers();
-    await this.seedPFSettings();
-    await this.seedTaxSlabs();
-    await this.seedEmployees();
-    await this.seedExpenses();
   }
 
   private async seedUsers() {
-    const count = await this.userRepo.count();
-    if (count > 0) return;
-
-    console.log('Seeding default system users...');
-    const users = [
-      { email: 'admin@payroll.com', password: 'Admin@123', role: Role.SUPER_ADMIN },
-      { email: 'finance@payroll.com', password: 'Finance@123', role: Role.FINANCE },
-      { email: 'hr@payroll.com', password: 'HR@123', role: Role.HR },
-    ];
-
-    for (const u of users) {
-      const hashedPassword = await bcrypt.hash(u.password, 10);
-      const user = this.userRepo.create({
-        email: u.email,
-        password: hashedPassword,
-        role: u.role,
-      });
-      await this.userRepo.save(user);
+    const adminUser = await this.userRepo.findOne({ where: { email: 'admin@payroll.com' } });
+    if (adminUser) {
+      console.log('Admin user already exists.');
+      return;
     }
+
+    console.log('Seeding admin user...');
+    const hashedPassword = await bcrypt.hash('Admin@123', 10);
+    const user = this.userRepo.create({
+      email: 'admin@payroll.com',
+      password: hashedPassword,
+      role: Role.SUPER_ADMIN,
+    });
+    await this.userRepo.save(user);
   }
 
   private async seedPFSettings() {
