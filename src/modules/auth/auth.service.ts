@@ -240,12 +240,15 @@ export class AuthService {
 
     await this.usersService.save(user);
 
+    // Invalidate all existing sessions (log out all devices)
+    await this.refreshTokenRepo.delete({ userId: user.id });
+
     return {
       message: 'Password has been reset successfully.',
     };
   }
 
-  async changePassword(userId: number, currentPassword: string, newPassword: string) {
+  async changePassword(userId: number, currentPassword: string, newPassword: string, accessToken?: string) {
     const user = await this.usersService.findById(userId);
     if (!user) {
       throw new UnauthorizedException('User not found');
@@ -268,6 +271,26 @@ export class AuthService {
 
     userWithPassword.password = await bcrypt.hash(newPassword, 10);
     await this.usersService.save(userWithPassword);
+
+    // Invalidate all existing refresh tokens (log out all devices)
+    await this.refreshTokenRepo.delete({ userId: user.id });
+
+    // Blacklist the current access token so immediate requests fail
+    if (accessToken) {
+      try {
+        const decoded = this.jwtService.decode(accessToken) as any;
+        const expiresAt = new Date(decoded.exp * 1000);
+        const blacklist = new BlacklistedToken();
+        blacklist.token = accessToken;
+        blacklist.expiresAt = expiresAt;
+        await this.blacklistedTokenRepo.save(blacklist);
+      } catch (e) {
+        const blacklist = new BlacklistedToken();
+        blacklist.token = accessToken;
+        blacklist.expiresAt = new Date(Date.now() + 24 * 60 * 60 * 1000);
+        await this.blacklistedTokenRepo.save(blacklist);
+      }
+    }
 
     return {
       message: 'Password changed successfully.',

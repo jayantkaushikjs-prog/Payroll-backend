@@ -57,6 +57,8 @@ export class AuthController {
     @Body('currentPassword') currentPassword: string,
     @Body('newPassword') newPassword: string,
   ) {
-    return this.authService.changePassword(req.user.sub, currentPassword, newPassword);
+    const authHeader = req.headers.authorization;
+    const accessToken = authHeader && authHeader.split(' ')[1];
+    return this.authService.changePassword(req.user.sub, currentPassword, newPassword, accessToken);
   }
 }

@@ -44,6 +44,18 @@ export class JwtAuthGuard implements CanActivate {
         throw new UnauthorizedException('Your account has been blocked by an administrator');
       }
 
+      // Check if the user's sessions were invalidated globally (e.g., password change)
+      // We do this by ensuring they have at least one active refresh token in the database.
+      // Since changing a password deletes all refresh tokens, this instantly kills all active JWTs on all devices.
+      const RefreshTokenEntity = require('../../modules/auth/refresh-token.entity').RefreshToken;
+      const activeSessions = await this.dataSource
+        .getRepository(RefreshTokenEntity)
+        .count({ where: { userId: payload.sub } });
+
+      if (activeSessions === 0) {
+        throw new UnauthorizedException('Session invalidated (password changed or logged out globally). Please log in again.');
+      }
+
       request['user'] = payload;
     } catch (error) {
       if (error instanceof UnauthorizedException) {
