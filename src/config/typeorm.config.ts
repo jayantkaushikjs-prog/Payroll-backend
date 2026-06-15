@@ -20,7 +20,7 @@ export default new DataSource({
   port: parseInt(process.env.DB_PORT, 10) || 5432,
   username: process.env.DB_USERNAME || 'postgres',
   password: process.env.DB_PASSWORD || 'postgres',
-  database: process.env.DB_NAME || 'payroll',
+  database: process.env.DB_NAME || 'payroll_management',
   entities: [
     User,
     Employee,
