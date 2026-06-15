@@ -311,18 +311,46 @@ export class EmployeesService {
     return result;
   }
 
-  async getFinancialSummary(employeeId: number, year: number): Promise<any> {
+  async getFinancialSummary(
+    employeeId: number,
+    year?: string,
+    startDateStr?: string,
+    endDateStr?: string,
+  ): Promise<any> {
     const employee = await this.findOne(employeeId);
 
-    const targetFY = `${year}-${year + 1}`;
-    // Get all disbursed payrolls for the employee in that target financial year
+    let startDate: Date;
+    let endDate: Date;
+
+    if (startDateStr && endDateStr) {
+      startDate = new Date(startDateStr);
+      endDate = new Date(endDateStr);
+    } else {
+      const yr = year ? parseInt(year, 10) : new Date().getFullYear();
+      startDate = new Date(yr, 3, 1); // April 1st of year
+      endDate = new Date(yr + 1, 2, 31); // March 31st of year + 1
+    }
+
+    // Generate all target months within the range
+    const targetMonths: { year: number; month: number }[] = [];
+    const current = new Date(startDate.getTime());
+    current.setDate(1);
+    const endLimit = new Date(endDate.getTime());
+    endLimit.setDate(1);
+    while (current <= endLimit) {
+      targetMonths.push({ year: current.getFullYear(), month: current.getMonth() + 1 });
+      current.setMonth(current.getMonth() + 1);
+    }
+
+    // Get all disbursed payrolls for the employee
     const allPayrolls = await this.payrollRepository.find({
       where: { employee_id: employeeId, status: 'disbursed' },
     });
-    const payrolls = allPayrolls.filter(p => {
-      const fy = p.month >= 4 ? `${p.year}-${p.year + 1}` : `${p.year - 1}-${p.year}`;
-      return fy === targetFY;
-    });
+
+    // Filter payrolls that match target months
+    const payrolls = allPayrolls.filter(p =>
+      targetMonths.some(tm => tm.year === p.year && tm.month === p.month)
+    );
 
     const amountPaid = payrolls.reduce((sum, p) => sum + Number(p.net_salary), 0);
     const pfDeducted = payrolls.reduce((sum, p) => sum + Number(p.pf_deduction), 0);
@@ -337,14 +365,16 @@ export class EmployeesService {
     let amountToBePaid = 0;
     let expectedPFRemaining = 0;
     let expectedTaxRemaining = 0;
+    let remainingMonthsCount = 0;
 
     if (structure) {
       const monthlyGross = Number(structure.gross_salary);
 
-      // Find which months in the financial year already have a disbursed payroll
-      const fyMonths = [4, 5, 6, 7, 8, 9, 10, 11, 12, 1, 2, 3];
-      const paidMonths = payrolls.map(p => p.month);
-      const remainingMonths = fyMonths.filter(m => !paidMonths.includes(m));
+      // Remaining months in the selection range that do not have disbursed payrolls
+      const remainingMonths = targetMonths.filter(tm =>
+        !payrolls.some(p => p.year === tm.year && p.month === tm.month)
+      );
+      remainingMonthsCount = remainingMonths.length;
 
       // Fetch dynamic PFSettings based on current date
       const pfSettings = await this.pfSettingsRepository.findOne({
@@ -355,6 +385,10 @@ export class EmployeesService {
       });
       const pfRate = pfSettings ? Number(pfSettings.employee_contribution_rate) / 100 : 0.12;
       const maxPfCap = pfSettings ? Number(pfSettings.max_pf_cap) : 1800;
+
+      // Use the start date's year to define the target FY for tax calculations
+      const fyYear = startDate.getMonth() >= 3 ? startDate.getFullYear() : startDate.getFullYear() - 1;
+      const targetFY = `${fyYear}-${fyYear + 1}`;
 
       // 1. Calculate projected annual gross: YTD Gross (excluding non_payable_deductions) + expected remaining months gross
       const grossPaidYTD = payrolls.reduce((sum, p) => sum + (Number(p.gross_salary) - Number(p.non_payable_deduction)), 0);
@@ -369,7 +403,6 @@ export class EmployeesService {
 
       // 3. Calculate remaining annual tax and distribute to remaining months
       const remainingAnnualTax = Math.max(0, totalAnnualTax - taxDeducted);
-      const remainingMonthsCount = remainingMonths.length;
       const monthlyTdsRemaining = remainingMonthsCount > 0 ? Number((remainingAnnualTax / remainingMonthsCount).toFixed(2)) : 0;
 
       for (const m of remainingMonths) {
@@ -399,10 +432,11 @@ export class EmployeesService {
     const remainingAdvanceBalance = totalAdvancesTaken - totalAdvancesRepaid;
 
     const paidMonthsCount = payrolls.length;
-    const remainingMonthsCount = structure ? (12 - paidMonthsCount) : 0;
 
     return {
-      year,
+      year: year ? parseInt(year, 10) : startDate.getFullYear(),
+      startDate: startDate.toISOString().split('T')[0],
+      endDate: endDate.toISOString().split('T')[0],
       amountPaid,
       amountToBePaid,
       pfDeducted,

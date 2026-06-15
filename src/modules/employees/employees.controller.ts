@@ -76,9 +76,13 @@ export class EmployeesController {
   }
 
   @Get(':id/financial-summary')
-  getFinancialSummary(@Param('id') id: string, @Query('year') year: string) {
-    const yr = year ? parseInt(year, 10) : new Date().getFullYear();
-    return this.employeesService.getFinancialSummary(+id, yr);
+  getFinancialSummary(
+    @Param('id') id: string,
+    @Query('year') year?: string,
+    @Query('startDate') startDate?: string,
+    @Query('endDate') endDate?: string,
+  ) {
+    return this.employeesService.getFinancialSummary(+id, year, startDate, endDate);
   }
 
   @Get(':id/export-financials')
