@@ -195,6 +195,9 @@ export class AuthService {
             ${otp}
           </div>
           <p>This OTP is valid for <strong>15 minutes</strong>. If you did not request this reset, please ignore this email.</p>
+          <p style="text-align: center; margin: 20px 0;">
+            <a href="https://payroll-management.react.thcs.in/" style="color: #6366f1; text-decoration: none; font-weight: bold;">https://payroll-management.react.thcs.in/</a>
+          </p>
           <hr style="border: 0; border-top: 1px solid #e5e7eb; margin: 20px 0;" />
           <p style="font-size: 11px; color: #6b7280; text-align: center;">This is an automated security message. Please do not reply.</p>
         </div>

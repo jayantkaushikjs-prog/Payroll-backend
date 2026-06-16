@@ -39,7 +39,7 @@ export class UsersService {
     const mailOptions = {
       to: saved.email,
       subject: 'Welcome to TH-PMS - Your Credentials',
-      text: `Hello,\n\nYou have been added to TH-PMS.\n\nWebsite: http://localhost:5173\nRole: ${createUserDto.role}\nEmail: ${createUserDto.email}\nPassword: ${createUserDto.password}\n\nBest regards,\nTH-PMS Team`,
+      text: `Hello,\n\nYou have been added to TH-PMS.\n\nWebsite: https://payroll-management.react.thcs.in/\nRole: ${createUserDto.role}\nEmail: ${createUserDto.email}\nPassword: ${createUserDto.password}\n\nBest regards,\nTH-PMS Team`,
       html: `
         <div style="font-family: Arial, sans-serif; padding: 20px; color: #333; max-width: 500px; margin: auto; border: 1px solid #e2e8f0; border-radius: 8px; text-align: center;">
           <div style="margin-bottom: 10px;">
@@ -53,7 +53,7 @@ export class UsersService {
           <h2 style="color: #6366f1; margin-top: 0; border-bottom: 1px solid #e2e8f0; padding-bottom: 10px;">TH-PMS</h2>
           <div style="text-align: left;">
             <p>Your account has been created successfully. Here are your details:</p>
-            <p><strong>Website Link:</strong> <a href="http://localhost:5173" style="color: #6366f1;">http://localhost:5173</a></p>
+            <p><strong>Website Link:</strong> <a href="https://payroll-management.react.thcs.in/" style="color: #6366f1;">https://payroll-management.react.thcs.in/</a></p>
             <p><strong>Role:</strong> ${createUserDto.role}</p>
             <p><strong>Email Address:</strong> ${createUserDto.email}</p>
             <p><strong>Password:</strong> ${createUserDto.password}</p>
