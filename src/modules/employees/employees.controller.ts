@@ -135,4 +135,16 @@ export class EmployeesController {
   remove(@Param('id') id: string) {
     return this.employeesService.remove(+id);
   }
+
+  @Delete('departments/:id')
+  @RequirePermissions(Permission.CREATE_EMPLOYEE)
+  removeDepartment(@Param('id') id: string) {
+    return this.employeesService.removeDepartment(+id);
+  }
+
+  @Delete('designations/:id')
+  @RequirePermissions(Permission.CREATE_EMPLOYEE)
+  removeDesignation(@Param('id') id: string) {
+    return this.employeesService.removeDesignation(+id);
+  }
 }

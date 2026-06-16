@@ -126,4 +126,12 @@ export class ExpensesService {
     const cat = this.categoryRepository.create({ name: trimmed });
     return this.categoryRepository.save(cat);
   }
+
+  async removeCategory(id: number): Promise<void> {
+    const category = await this.categoryRepository.findOne({ where: { id } });
+    if (!category) {
+      throw new NotFoundException(`Expense category with ID ${id} not found`);
+    }
+    await this.categoryRepository.remove(category);
+  }
 }

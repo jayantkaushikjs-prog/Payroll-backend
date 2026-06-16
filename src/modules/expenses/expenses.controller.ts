@@ -66,6 +66,12 @@ export class ExpensesController {
     return this.expensesService.update(+id, updateDto);
   }
 
+  @Delete('categories/:id')
+  @RequirePermissions(Permission.MANAGE_EXPENSES)
+  removeCategory(@Param('id') id: string) {
+    return this.expensesService.removeCategory(+id);
+  }
+
   @Delete(':id')
   @RequirePermissions(Permission.MANAGE_EXPENSES)
   remove(@Param('id') id: string) {

@@ -592,4 +592,12 @@ export class EmployeesService {
     const des = this.designationRepository.create({ name: trimmed });
     return this.designationRepository.save(des);
   }
+
+  async removeDepartment(id: number): Promise<void> {
+    await this.departmentRepository.delete(id);
+  }
+
+  async removeDesignation(id: number): Promise<void> {
+    await this.designationRepository.delete(id);
+  }
 }
