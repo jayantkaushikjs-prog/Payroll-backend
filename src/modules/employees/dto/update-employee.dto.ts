@@ -148,6 +148,14 @@ export class UpdateEmployeeDto {
   damages_recovery?: number;
 
   @IsOptional()
+  @IsNumber({}, { message: 'Bonus / Incentives must be a number' })
+  bonus_incentives?: number;
+
+  @IsOptional()
+  @IsNumber({}, { message: 'Other Deductions must be a number' })
+  other_deductions?: number;
+
+  @IsOptional()
   @IsString()
   remarks?: string;
 }

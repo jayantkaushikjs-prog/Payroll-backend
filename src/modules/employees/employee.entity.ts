@@ -26,6 +26,12 @@ export class Employee {
   @Column({ type: 'date' })
   joining_date: string;
 
+  @Column({ type: 'decimal', precision: 14, scale: 2, default: 0 })
+  monthly_ctc: number;
+
+  @Column({ type: 'decimal', precision: 14, scale: 2, default: 0 })
+  annual_ctc: number;
+
   @Column()
   bank_name: string;
 
