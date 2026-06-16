@@ -75,6 +75,12 @@ export class Employee {
   @Column({ type: 'decimal', precision: 12, scale: 2, default: 0 })
   damages_recovery: number;
 
+  @Column({ type: 'decimal', precision: 12, scale: 2, default: 0 })
+  bonus_incentives: number;
+
+  @Column({ type: 'decimal', precision: 12, scale: 2, default: 0 })
+  other_deductions: number;
+
   @Column({ type: 'text', nullable: true })
   remarks: string;
 
