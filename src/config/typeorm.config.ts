@@ -1,6 +1,8 @@
 import { DataSource } from 'typeorm';
 import { User } from '../modules/users/user.entity';
 import { Employee } from '../modules/employees/employee.entity';
+import { Department } from '../modules/employees/department.entity';
+import { Designation } from '../modules/employees/designation.entity';
 import { SalaryStructure } from '../modules/salary-structures/salary-structure.entity';
 import { NonPayableDays } from '../modules/non-payable-days/non-payable-days.entity';
 import { PFSettings } from '../modules/pf/pf-settings.entity';
@@ -8,6 +10,7 @@ import { TaxSlab } from '../modules/tax/tax-slab.entity';
 import { EmployeeAdvance } from '../modules/advances/employee-advance.entity';
 import { Payroll } from '../modules/payroll/payroll.entity';
 import { Expense } from '../modules/expenses/expense.entity';
+import { ExpenseCategory } from '../modules/expenses/expense-category.entity';
 import { RefreshToken } from '../modules/auth/refresh-token.entity';
 import { BlacklistedToken } from '../modules/auth/blacklisted-token.entity';
 import * as dotenv from 'dotenv';
@@ -24,6 +27,8 @@ export default new DataSource({
   entities: [
     User,
     Employee,
+    Department,
+    Designation,
     SalaryStructure,
     NonPayableDays,
     PFSettings,
@@ -31,6 +36,7 @@ export default new DataSource({
     EmployeeAdvance,
     Payroll,
     Expense,
+    ExpenseCategory,
     RefreshToken,
     BlacklistedToken,
   ],

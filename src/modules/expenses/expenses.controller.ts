@@ -42,6 +42,18 @@ export class ExpensesController {
     return this.expensesService.getExpensesTrend(l, excludeSalaries === 'true');
   }
 
+  @Get('categories')
+  @RequirePermissions(Permission.VIEW_EXPENSES)
+  findAllCategories() {
+    return this.expensesService.findAllCategories();
+  }
+
+  @Post('categories')
+  @RequirePermissions(Permission.MANAGE_EXPENSES)
+  createCategory(@Body('name') name: string) {
+    return this.expensesService.createCategory(name);
+  }
+
   @Get(':id')
   @RequirePermissions(Permission.VIEW_EXPENSES)
   findOne(@Param('id') id: string) {

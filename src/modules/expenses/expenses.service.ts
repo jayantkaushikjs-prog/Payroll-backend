@@ -1,7 +1,8 @@
-import { Injectable, NotFoundException } from '@nestjs/common';
+import { Injectable, NotFoundException, ConflictException } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository, Between, Not, In } from 'typeorm';
 import { Expense } from './expense.entity';
+import { ExpenseCategory } from './expense-category.entity';
 import { CreateExpenseDto } from './dto/create-expense.dto';
 
 @Injectable()
@@ -9,6 +10,8 @@ export class ExpensesService {
   constructor(
     @InjectRepository(Expense)
     private expensesRepository: Repository<Expense>,
+    @InjectRepository(ExpenseCategory)
+    private categoryRepository: Repository<ExpenseCategory>,
   ) {}
 
   async create(createDto: CreateExpenseDto): Promise<Expense> {
@@ -105,5 +108,22 @@ export class ExpensesService {
     }
     
     return trend;
+  }
+
+  async findAllCategories(): Promise<ExpenseCategory[]> {
+    return this.categoryRepository.find({ order: { name: 'ASC' } });
+  }
+
+  async createCategory(name: string): Promise<ExpenseCategory> {
+    const trimmed = name.trim().toLowerCase();
+    if (!trimmed) {
+      throw new ConflictException('Category name cannot be empty');
+    }
+    const exists = await this.categoryRepository.findOne({ where: { name: trimmed } });
+    if (exists) {
+      return exists;
+    }
+    const cat = this.categoryRepository.create({ name: trimmed });
+    return this.categoryRepository.save(cat);
   }
 }

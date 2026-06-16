@@ -64,13 +64,11 @@ export class UpdateEmployeeDto {
   @IsOptional()
   @IsString()
   @Transform(({ value }) => typeof value === 'string' ? value.trim() : value)
-  @IsIn(DEPARTMENTS, { message: 'Invalid department option selected' })
   department?: string;
 
   @IsOptional()
   @IsString()
   @Transform(({ value }) => typeof value === 'string' ? value.trim() : value)
-  @IsIn(DESIGNATIONS, { message: 'Invalid designation option selected' })
   designation?: string;
 
   @IsOptional()

@@ -2,6 +2,8 @@ import { Injectable, ConflictException, NotFoundException } from '@nestjs/common
 import { InjectRepository } from '@nestjs/typeorm';
 import { Between, Repository, LessThanOrEqual } from 'typeorm';
 import { Employee } from './employee.entity';
+import { Department } from './department.entity';
+import { Designation } from './designation.entity';
 import { CreateEmployeeDto } from './dto/create-employee.dto';
 import { UpdateEmployeeDto } from './dto/update-employee.dto';
 import { Payroll } from '../payroll/payroll.entity';
@@ -23,6 +25,10 @@ export class EmployeesService {
     private advanceRepository: Repository<EmployeeAdvance>,
     @InjectRepository(PFSettings)
     private pfSettingsRepository: Repository<PFSettings>,
+    @InjectRepository(Department)
+    private departmentRepository: Repository<Department>,
+    @InjectRepository(Designation)
+    private designationRepository: Repository<Designation>,
   ) {}
 
   async create(createEmployeeDto: CreateEmployeeDto): Promise<Employee> {
@@ -551,5 +557,39 @@ export class EmployeesService {
     }
 
     return lines.join('\n');
+  }
+
+  async findAllDepartments(): Promise<Department[]> {
+    return this.departmentRepository.find({ order: { name: 'ASC' } });
+  }
+
+  async createDepartment(name: string): Promise<Department> {
+    const trimmed = name.trim();
+    if (!trimmed) {
+      throw new ConflictException('Department name cannot be empty');
+    }
+    const exists = await this.departmentRepository.findOne({ where: { name: trimmed } });
+    if (exists) {
+      return exists;
+    }
+    const dep = this.departmentRepository.create({ name: trimmed });
+    return this.departmentRepository.save(dep);
+  }
+
+  async findAllDesignations(): Promise<Designation[]> {
+    return this.designationRepository.find({ order: { name: 'ASC' } });
+  }
+
+  async createDesignation(name: string): Promise<Designation> {
+    const trimmed = name.trim();
+    if (!trimmed) {
+      throw new ConflictException('Designation name cannot be empty');
+    }
+    const exists = await this.designationRepository.findOne({ where: { name: trimmed } });
+    if (exists) {
+      return exists;
+    }
+    const des = this.designationRepository.create({ name: trimmed });
+    return this.designationRepository.save(des);
   }
 }

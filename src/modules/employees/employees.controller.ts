@@ -37,6 +37,28 @@ export class EmployeesController {
     return this.employeesService.importCsv(csvContent);
   }
 
+  @Get('departments')
+  findAllDepartments() {
+    return this.employeesService.findAllDepartments();
+  }
+
+  @Post('departments')
+  @RequirePermissions(Permission.CREATE_EMPLOYEE)
+  createDepartment(@Body('name') name: string) {
+    return this.employeesService.createDepartment(name);
+  }
+
+  @Get('designations')
+  findAllDesignations() {
+    return this.employeesService.findAllDesignations();
+  }
+
+  @Post('designations')
+  @RequirePermissions(Permission.CREATE_EMPLOYEE)
+  createDesignation(@Body('name') name: string) {
+    return this.employeesService.createDesignation(name);
+  }
+
   @Get()
   findAll(@Req() req) {
     const user = req.user;

@@ -7,6 +7,8 @@ import { Repository } from 'typeorm';
 // Entities
 import { User } from './modules/users/user.entity';
 import { Employee } from './modules/employees/employee.entity';
+import { Department } from './modules/employees/department.entity';
+import { Designation } from './modules/employees/designation.entity';
 import { SalaryStructure } from './modules/salary-structures/salary-structure.entity';
 import { NonPayableDays } from './modules/non-payable-days/non-payable-days.entity';
 import { PFSettings } from './modules/pf/pf-settings.entity';
@@ -14,6 +16,7 @@ import { TaxSlab } from './modules/tax/tax-slab.entity';
 import { EmployeeAdvance } from './modules/advances/employee-advance.entity';
 import { Payroll } from './modules/payroll/payroll.entity';
 import { Expense } from './modules/expenses/expense.entity';
+import { ExpenseCategory } from './modules/expenses/expense-category.entity';
 import { RefreshToken } from './modules/auth/refresh-token.entity';
 import { BlacklistedToken } from './modules/auth/blacklisted-token.entity';
 
@@ -46,6 +49,8 @@ import * as bcrypt from 'bcryptjs';
       entities: [
         User,
         Employee,
+        Department,
+        Designation,
         SalaryStructure,
         NonPayableDays,
         PFSettings,
@@ -53,6 +58,7 @@ import * as bcrypt from 'bcryptjs';
         EmployeeAdvance,
         Payroll,
         Expense,
+        ExpenseCategory,
         RefreshToken,
         BlacklistedToken,
       ],
@@ -61,6 +67,8 @@ import * as bcrypt from 'bcryptjs';
     TypeOrmModule.forFeature([
       User,
       Employee,
+      Department,
+      Designation,
       SalaryStructure,
       NonPayableDays,
       PFSettings,
@@ -68,6 +76,7 @@ import * as bcrypt from 'bcryptjs';
       EmployeeAdvance,
       Payroll,
       Expense,
+      ExpenseCategory,
       RefreshToken,
       BlacklistedToken,
     ]),
@@ -184,6 +193,7 @@ export class AppModule implements OnApplicationBootstrap {
         ifsc: 'CHAS0001234',
         tax_regime: 'new',
         active_status: true,
+        pf_deduction: true,
       },
       {
         employee_code: 'EMP002',
@@ -198,6 +208,7 @@ export class AppModule implements OnApplicationBootstrap {
         ifsc: 'WFLS0005678',
         tax_regime: 'new',
         active_status: true,
+        pf_deduction: true,
       },
     ];
 

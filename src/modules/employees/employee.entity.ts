@@ -41,7 +41,7 @@ export class Employee {
   @Column({ default: true })
   active_status: boolean;
 
-  @Column({ default: true })
+  @Column({ default: false })
   pf_deduction: boolean;
 
   @Column({ default: true })

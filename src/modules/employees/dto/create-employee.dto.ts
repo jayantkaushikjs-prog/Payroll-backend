@@ -65,13 +65,11 @@ export class CreateEmployeeDto {
   @IsNotEmpty({ message: 'Department is required' })
   @IsString()
   @Transform(({ value }) => typeof value === 'string' ? value.trim() : value)
-  @IsIn(DEPARTMENTS, { message: 'Invalid department option selected' })
   department: string;
 
   @IsNotEmpty({ message: 'Designation is required' })
   @IsString()
   @Transform(({ value }) => typeof value === 'string' ? value.trim() : value)
-  @IsIn(DESIGNATIONS, { message: 'Invalid designation option selected' })
   designation: string;
 
   @IsNotEmpty({ message: 'Joining date is required' })
