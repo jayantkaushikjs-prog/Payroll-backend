@@ -112,6 +112,14 @@ export class UpdateEmployeeDto {
   tax_deduction?: boolean;
 
   @IsOptional()
+  @IsNumber({}, { message: 'Monthly CTC must be a number' })
+  monthly_ctc?: number;
+
+  @IsOptional()
+  @IsNumber({}, { message: 'Annual CTC must be a number' })
+  annual_ctc?: number;
+
+  @IsOptional()
   @IsDateString({}, { message: 'Relieving date must be a valid ISO date string (YYYY-MM-DD)' })
   relieving_date?: string;
 

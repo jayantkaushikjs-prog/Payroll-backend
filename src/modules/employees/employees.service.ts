@@ -47,7 +47,9 @@ export class EmployeesService {
     }
 
     const employee = this.employeesRepository.create(createEmployeeDto);
-    return this.employeesRepository.save(employee);
+    const saved = await this.employeesRepository.save(employee);
+    await this.syncSalaryStructureFromMonthlyCtc(saved, createEmployeeDto.monthly_ctc, saved.joining_date);
+    return saved;
   }
 
   async findAll(): Promise<Employee[]> {
@@ -87,8 +89,88 @@ export class EmployeesService {
       }
     }
 
+    const currentMonthlyCtc = Number(employee.monthly_ctc || 0);
+    const nextMonthlyCtc = updateEmployeeDto.monthly_ctc !== undefined ? Number(updateEmployeeDto.monthly_ctc) : currentMonthlyCtc;
+    const shouldSyncSalary =
+      updateEmployeeDto.monthly_ctc !== undefined ||
+      (updateEmployeeDto.pf_deduction !== undefined && nextMonthlyCtc > 0);
+
     Object.assign(employee, updateEmployeeDto);
-    return this.employeesRepository.save(employee);
+    const saved = await this.employeesRepository.save(employee);
+
+    if (shouldSyncSalary) {
+      await this.syncSalaryStructureFromMonthlyCtc(saved, nextMonthlyCtc);
+    }
+
+    return saved;
+  }
+
+  private async syncSalaryStructureFromMonthlyCtc(
+    employee: Employee,
+    monthlyCtcValue?: number,
+    preferredEffectiveFrom?: string,
+  ): Promise<void> {
+    const ctc = Number(monthlyCtcValue || 0);
+    if (!ctc || isNaN(ctc) || ctc <= 0) {
+      return;
+    }
+
+    const activeStructure = await this.salaryStructureRepository.findOne({
+      where: { employee_id: employee.id, is_active: true },
+    });
+
+    if (activeStructure && Number(activeStructure.ctc) === ctc && preferredEffectiveFrom === undefined) {
+      return;
+    }
+
+    const basicRatio = activeStructure && Number(activeStructure.gross_salary) > 0
+      ? Number(activeStructure.basic_salary) / Number(activeStructure.gross_salary)
+      : 0.5;
+    const hraRatio = activeStructure && Number(activeStructure.basic_salary) > 0
+      ? Number(activeStructure.hra) / Number(activeStructure.basic_salary)
+      : 0.4;
+
+    const effectiveFrom = preferredEffectiveFrom || new Date().toISOString().split('T')[0];
+    let grossSalary = ctc;
+
+    if (employee.pf_deduction !== false) {
+      const pfSettings = await this.pfSettingsRepository.findOne({
+        where: { effective_date: LessThanOrEqual(effectiveFrom) },
+        order: { effective_date: 'DESC' },
+      });
+      const employerContributionRate = Number(pfSettings?.employer_contribution_rate ?? 12) / 100;
+      const maxPfCap = Number(pfSettings?.max_pf_cap ?? 1800);
+      const grossSalaryUncapped = ctc / (1 + employerContributionRate);
+
+      if (grossSalaryUncapped * employerContributionRate > maxPfCap) {
+        grossSalary = ctc - maxPfCap;
+      } else {
+        grossSalary = grossSalaryUncapped;
+      }
+    }
+
+    grossSalary = Number(grossSalary.toFixed(2));
+    const basicSalary = Number((basicRatio * grossSalary).toFixed(2));
+    const hra = Number((hraRatio * basicSalary).toFixed(2));
+    const specialAllowance = 0;
+    const otherAllowance = Number((grossSalary - basicSalary - hra).toFixed(2));
+
+    await this.salaryStructureRepository.update(
+      { employee_id: employee.id, is_active: true },
+      { is_active: false },
+    );
+
+    await this.salaryStructureRepository.save(this.salaryStructureRepository.create({
+      employee_id: employee.id,
+      basic_salary: basicSalary,
+      hra,
+      special_allowance: specialAllowance,
+      other_allowance: otherAllowance,
+      gross_salary: grossSalary,
+      ctc,
+      effective_from: effectiveFrom,
+      is_active: true,
+    }));
   }
 
   async remove(id: number): Promise<void> {
