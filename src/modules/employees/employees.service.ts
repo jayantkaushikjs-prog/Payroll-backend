@@ -518,6 +518,22 @@ export class EmployeesService {
     const totalAdvancesTaken = advances.reduce((sum, a) => sum + Number(a.amount), 0);
     const totalAdvancesRepaid = advances.reduce((sum, a) => sum + Number(a.total_recovered), 0);
     const remainingAdvanceBalance = totalAdvancesTaken - totalAdvancesRepaid;
+    const advanceDetails = advances
+      .sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime())
+      .map((advance) => ({
+        id: advance.id,
+        amount: Number(advance.amount),
+        date: advance.date,
+        reason: advance.reason,
+        recovery_type: advance.recovery_type,
+        installment_amount: advance.installment_amount ? Number(advance.installment_amount) : null,
+        total_recovered: Number(advance.total_recovered),
+        remaining_amount: Number(advance.remaining_amount),
+        start_month: advance.start_month,
+        start_year: advance.start_year,
+        is_fully_recovered: advance.is_fully_recovered,
+        is_advance_salary: advance.is_advance_salary,
+      }));
 
     const paidMonthsCount = payrolls.length;
 
@@ -535,6 +551,7 @@ export class EmployeesService {
       totalAdvancesTaken,
       totalAdvancesRepaid,
       remainingAdvanceBalance,
+      advanceDetails,
       paidMonthsCount,
       remainingMonthsCount,
       structure: structure ? {
@@ -608,6 +625,41 @@ export class EmployeesService {
     ].forEach(([label, value]) => {
       lines.push([this.escapeCsv(label), this.escapeCsv(value)].join(','));
     });
+    lines.push('');
+    lines.push('ADVANCE DETAILS');
+    lines.push([
+      'Date',
+      'Amount',
+      'Recovery Type',
+      'Installment Amount',
+      'Estimated No. Of Months',
+      'Start Month',
+      'Start Year',
+      'Total Recovered',
+      'Remaining Amount',
+      'Fully Recovered',
+      'Advance Salary',
+      'Reason'
+    ].join(','));
+    for (const advance of summary.advanceDetails || []) {
+      const estimatedMonths = advance.installment_amount
+        ? Math.ceil(Number(advance.amount) / Number(advance.installment_amount))
+        : '';
+      lines.push([
+        this.escapeCsv(advance.date),
+        this.escapeCsv(advance.amount),
+        this.escapeCsv(advance.recovery_type),
+        this.escapeCsv(advance.installment_amount ?? ''),
+        this.escapeCsv(estimatedMonths),
+        this.escapeCsv(advance.start_month),
+        this.escapeCsv(advance.start_year),
+        this.escapeCsv(advance.total_recovered),
+        this.escapeCsv(advance.remaining_amount),
+        this.escapeCsv(advance.is_fully_recovered ? 'Yes' : 'No'),
+        this.escapeCsv(advance.is_advance_salary ? 'Yes' : 'No'),
+        this.escapeCsv(advance.reason || ''),
+      ].join(','));
+    }
     lines.push('');
     lines.push('MONTHLY PAYROLL RECORDS');
     lines.push([
