@@ -548,17 +548,32 @@ export class EmployeesService {
     };
   }
 
-  async generateFinancialsCsv(employeeId: number, startYear: number, endYear: number): Promise<string> {
+  async generateFinancialsCsv(employeeId: number, startDateStr: string, endDateStr: string): Promise<string> {
     const employee = await this.findOne(employeeId);
+    const summary = await this.getFinancialSummary(employeeId, undefined, startDateStr, endDateStr);
     
+    const startDate = new Date(startDateStr);
+    const endDate = new Date(endDateStr);
+
+    const targetMonths: { year: number; month: number }[] = [];
+    const current = new Date(startDate.getTime());
+    current.setDate(1);
+    const endLimit = new Date(endDate.getTime());
+    endLimit.setDate(1);
+    while (current <= endLimit) {
+      targetMonths.push({ year: current.getFullYear(), month: current.getMonth() + 1 });
+      current.setMonth(current.getMonth() + 1);
+    }
+
     // Fetch all payrolls for this employee in the desired tenure
     const payrolls = await this.payrollRepository.find({
       where: { employee_id: employeeId },
       order: { year: 'ASC', month: 'ASC' },
     });
 
-    // Filter by year range
-    const filteredPayrolls = payrolls.filter(p => p.year >= startYear && p.year <= endYear);
+    const filteredPayrolls = payrolls.filter(p =>
+      targetMonths.some(tm => tm.year === p.year && tm.month === p.month)
+    );
 
     const monthNames = [
       'January', 'February', 'March', 'April', 'May', 'June',
@@ -566,8 +581,33 @@ export class EmployeesService {
     ];
 
     const lines: string[] = [];
-    lines.push(`Financial Report for Employee: ${employee.employee_code} - ${employee.name}`);
-    lines.push(`Tenure: ${startYear} to ${endYear}`);
+    lines.push(['Financial Report for Employee', this.escapeCsv(`${employee.employee_code} - ${employee.name}`)].join(','));
+    lines.push(['Tenure', this.escapeCsv(`${summary.startDate} to ${summary.endDate}`)].join(','));
+    lines.push('');
+    lines.push('FINANCIAL SUMMARY');
+    lines.push(['Metric', 'Value'].join(','));
+    [
+      ['Amount Paid', summary.amountPaid],
+      ['Amount To Be Paid', summary.amountToBePaid],
+      ['PF Deducted', summary.pfDeducted],
+      ['Expected PF Remaining', summary.expectedPFRemaining],
+      ['Tax Deducted', summary.taxDeducted],
+      ['Expected Tax Remaining', summary.expectedTaxRemaining],
+      ['Advance Recovered', summary.advanceRecovered],
+      ['Total Advances Taken', summary.totalAdvancesTaken],
+      ['Total Advances Repaid', summary.totalAdvancesRepaid],
+      ['Remaining Advance Balance', summary.remainingAdvanceBalance],
+      ['Paid Months Count', summary.paidMonthsCount],
+      ['Remaining Months Count', summary.remainingMonthsCount],
+      ['CTC', summary.structure?.ctc ?? 0],
+      ['Gross Salary', summary.structure?.gross_salary ?? 0],
+      ['Basic Salary', summary.structure?.basic_salary ?? 0],
+      ['HRA', summary.structure?.hra ?? 0],
+      ['Special Allowance', summary.structure?.special_allowance ?? 0],
+      ['Other Allowance', summary.structure?.other_allowance ?? 0],
+    ].forEach(([label, value]) => {
+      lines.push([this.escapeCsv(label), this.escapeCsv(value)].join(','));
+    });
     lines.push('');
     lines.push('MONTHLY PAYROLL RECORDS');
     lines.push([
@@ -584,15 +624,15 @@ export class EmployeesService {
 
     for (const p of filteredPayrolls) {
       lines.push([
-        monthNames[p.month - 1],
-        p.year,
-        p.gross_salary,
-        p.non_payable_deduction,
-        p.pf_deduction,
-        p.tax_deduction,
-        p.advance_recovery,
-        p.net_salary,
-        p.status
+        this.escapeCsv(monthNames[p.month - 1]),
+        this.escapeCsv(p.year),
+        this.escapeCsv(p.gross_salary),
+        this.escapeCsv(p.non_payable_deduction),
+        this.escapeCsv(p.pf_deduction),
+        this.escapeCsv(p.tax_deduction),
+        this.escapeCsv(p.advance_recovery),
+        this.escapeCsv(p.net_salary),
+        this.escapeCsv(p.status)
       ].join(','));
     }
 
@@ -628,13 +668,13 @@ export class EmployeesService {
       const totalNet = group.reduce((sum, p) => sum + Number(p.net_salary), 0).toFixed(2);
 
       lines.push([
-        fy,
-        totalGross,
-        totalNpd,
-        totalPF,
-        totalTax,
-        totalAdv,
-        totalNet
+        this.escapeCsv(fy),
+        this.escapeCsv(totalGross),
+        this.escapeCsv(totalNpd),
+        this.escapeCsv(totalPF),
+        this.escapeCsv(totalTax),
+        this.escapeCsv(totalAdv),
+        this.escapeCsv(totalNet)
       ].join(','));
     }
 

@@ -110,15 +110,19 @@ export class EmployeesController {
   @Get(':id/export-financials')
   async exportFinancials(
     @Param('id') id: string,
-    @Query('startYear') startYear: string,
-    @Query('endYear') endYear: string,
+    @Query('startDate') startDate: string,
+    @Query('endDate') endDate: string,
     @Res() res: Response,
+    @Query('startYear') startYear?: string,
+    @Query('endYear') endYear?: string,
   ) {
     const sYr = startYear ? parseInt(startYear, 10) : new Date().getFullYear() - 1;
     const eYr = endYear ? parseInt(endYear, 10) : new Date().getFullYear();
-    const csvContent = await this.employeesService.generateFinancialsCsv(+id, sYr, eYr);
+    const sDate = startDate || `${sYr}-04-01`;
+    const eDate = endDate || `${eYr + 1}-03-31`;
+    const csvContent = await this.employeesService.generateFinancialsCsv(+id, sDate, eDate);
     const employee = await this.employeesService.findOne(+id);
-    const filename = `${employee.name.replace(/\s+/g, '_')}_financials_${sYr}_to_${eYr}.csv`;
+    const filename = `${employee.name.replace(/\s+/g, '_')}_financials_${sDate}_to_${eDate}.csv`;
     res.setHeader('Content-Type', 'text/csv');
     res.setHeader('Content-Disposition', `attachment; filename=${filename}`);
     return res.status(200).send(csvContent);
