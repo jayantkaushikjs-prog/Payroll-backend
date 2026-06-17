@@ -336,11 +336,12 @@ export class PayrollService {
   }
 
   async getPayrollForMonthAndYear(month: number, year: number): Promise<Payroll[]> {
-    return this.payrollRepository.find({
+    const payrolls = await this.payrollRepository.find({
       where: { month, year },
       relations: ['employee'],
       order: { employee_id: 'ASC' },
     });
+    return payrolls.filter((payroll) => payroll.employee?.active_status !== false);
   }
 
   async updatePayrollStatus(month: number, year: number, status: 'draft' | 'locked' | 'disbursed'): Promise<Payroll[]> {
