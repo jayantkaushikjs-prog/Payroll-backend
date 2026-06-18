@@ -7,6 +7,7 @@ import { NonPayableDaysService } from '../non-payable-days/non-payable-days.serv
 import { ExpensesService } from '../expenses/expenses.service';
 import { Role } from '../../common/enums/role.enum';
 import { formatCurrency } from '../../config/currency.config';
+import { escapeCsv } from '../../common/utils/csv.util';
 
 @Injectable()
 export class ReportsService {
@@ -32,8 +33,7 @@ export class ReportsService {
   }
 
   private escapeCsv(value: unknown): string {
-    const text = value === null || value === undefined ? '' : String(value);
-    return `"${text.replace(/"/g, '""')}"`;
+    return escapeCsv(value);
   }
 
   private escapeCurrency(value: number | string | null | undefined): string {

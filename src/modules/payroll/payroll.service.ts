@@ -9,7 +9,12 @@ import { PFService } from '../pf/pf.service';
 import { TaxService } from '../tax/tax.service';
 import { AdvancesService } from '../advances/advances.service';
 import { ExpensesService } from '../expenses/expenses.service';
-import { calculateAnnualTax, calculateAnnualTaxWithBreakdown } from '../../utils/tax-calculator.util';
+import { calculateAnnualTaxWithBreakdown } from '../../utils/tax-calculator.util';
+import {
+  getCompletedFinancialYearMonthsBefore,
+  getFinancialYear,
+  getRemainingFinancialYearMonthsExcludingCurrent,
+} from '../../common/utils/financial-year.util';
 
 @Injectable()
 export class PayrollService {
@@ -26,7 +31,7 @@ export class PayrollService {
   ) {}
 
   private getFinancialYear(month: number, year: number): string {
-    return month >= 4 ? `${year}-${year + 1}` : `${year - 1}-${year}`;
+    return getFinancialYear(month, year);
   }
 
   async calculateSingleEmployee(employeeId: number, month: number, year: number) {
@@ -102,7 +107,7 @@ export class PayrollService {
       });
 
       // Handle any missing historical records in the current financial year by assuming standard gross
-      const completedMonthsCount = month >= 4 ? month - 4 : 8 + month;
+      const completedMonthsCount = getCompletedFinancialYearMonthsBefore(month);
       const dbRecordsCount = ytdRecords.length;
       const missingMonthsCount = Math.max(0, completedMonthsCount - dbRecordsCount);
       const missingGross = missingMonthsCount * grossSalary;
@@ -110,7 +115,7 @@ export class PayrollService {
       const grossPaidYTD = ytdRecords.reduce((sum, p) => sum + (Number(p.gross_salary) - Number(p.non_payable_deduction)), 0) + missingGross;
       const taxPaidYTD = ytdRecords.reduce((sum, p) => sum + Number(p.tax_deduction), 0);
 
-      const remainingMonthsExcludingCurrent = month >= 4 ? 15 - month : 3 - month;
+      const remainingMonthsExcludingCurrent = getRemainingFinancialYearMonthsExcludingCurrent(month);
       const remainingPayrollMonths = remainingMonthsExcludingCurrent + 1;
 
       // Projected Annual Income = YTD Gross Paid + Current Month Earnings + Expected Earnings for Remaining Months (standard monthly gross)

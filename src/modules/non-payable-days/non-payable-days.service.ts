@@ -5,6 +5,7 @@ import { NonPayableDays } from './non-payable-days.entity';
 import { CreateNonPayableDaysDto } from './dto/create-non-payable-days.dto';
 import { EmployeesService } from '../employees/employees.service';
 import { Payroll } from '../payroll/payroll.entity';
+import { parseCsvLine } from '../../common/utils/csv.util';
 
 @Injectable()
 export class NonPayableDaysService {
@@ -104,13 +105,13 @@ export class NonPayableDaysService {
       throw new BadRequestException('CSV file is empty or missing header');
     }
 
-    const headers = this.parseCsvLine(lines[0]).map(h => h.trim().toLowerCase());
+    const headers = parseCsvLine(lines[0]).map(h => h.trim().toLowerCase());
     const errors: string[] = [];
     let importedCount = 0;
 
     for (let i = 1; i < lines.length; i++) {
       try {
-        const values = this.parseCsvLine(lines[i]);
+        const values = parseCsvLine(lines[i]);
         if (values.length < headers.length) {
           errors.push(`Row ${i + 1}: Column count mismatch`);
           continue;
@@ -164,27 +165,4 @@ export class NonPayableDaysService {
     return { imported: importedCount, errors };
   }
 
-  private parseCsvLine(line: string): string[] {
-    const result: string[] = [];
-    let current = '';
-    let inQuotes = false;
-    for (let i = 0; i < line.length; i++) {
-      const char = line[i];
-      if (char === '"') {
-        if (inQuotes && line[i + 1] === '"') {
-          current += '"';
-          i++;
-        } else {
-          inQuotes = !inQuotes;
-        }
-      } else if (char === ',' && !inQuotes) {
-        result.push(current);
-        current = '';
-      } else {
-        current += char;
-      }
-    }
-    result.push(current);
-    return result;
-  }
 }

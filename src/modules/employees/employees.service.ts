@@ -11,6 +11,9 @@ import { SalaryStructure } from '../salary-structures/salary-structure.entity';
 import { EmployeeAdvance } from '../advances/employee-advance.entity';
 import { PFSettings } from '../pf/pf-settings.entity';
 import { calculateAnnualTax } from '../../utils/tax-calculator.util';
+import { escapeCsv, parseCsvLine } from '../../common/utils/csv.util';
+import { getFinancialYear } from '../../common/utils/financial-year.util';
+import { calculateSalaryComponentsFromExistingRatios } from '../salary-structures/utils/salary-components.util';
 
 @Injectable()
 export class EmployeesService {
@@ -131,29 +134,25 @@ export class EmployeesService {
       : 0.4;
 
     const effectiveFrom = preferredEffectiveFrom || new Date().toISOString().split('T')[0];
-    let grossSalary = ctc;
-
+    let employerContributionRate = 12;
+    let maxPfCap = 1800;
     if (employee.pf_deduction !== false) {
       const pfSettings = await this.pfSettingsRepository.findOne({
         where: { effective_date: LessThanOrEqual(effectiveFrom) },
         order: { effective_date: 'DESC' },
       });
-      const employerContributionRate = Number(pfSettings?.employer_contribution_rate ?? 12) / 100;
-      const maxPfCap = Number(pfSettings?.max_pf_cap ?? 1800);
-      const grossSalaryUncapped = ctc / (1 + employerContributionRate);
-
-      if (grossSalaryUncapped * employerContributionRate > maxPfCap) {
-        grossSalary = ctc - maxPfCap;
-      } else {
-        grossSalary = grossSalaryUncapped;
-      }
+      employerContributionRate = Number(pfSettings?.employer_contribution_rate ?? 12);
+      maxPfCap = Number(pfSettings?.max_pf_cap ?? 1800);
     }
 
-    grossSalary = Number(grossSalary.toFixed(2));
-    const basicSalary = Number((basicRatio * grossSalary).toFixed(2));
-    const hra = Number((hraRatio * basicSalary).toFixed(2));
-    const specialAllowance = 0;
-    const otherAllowance = Number((grossSalary - basicSalary - hra).toFixed(2));
+    const components = calculateSalaryComponentsFromExistingRatios({
+      ctc,
+      basicRatio,
+      hraRatio,
+      pfDeduction: employee.pf_deduction,
+      employerContributionRate,
+      maxPfCap,
+    });
 
     await this.salaryStructureRepository.update(
       { employee_id: employee.id, is_active: true },
@@ -162,11 +161,11 @@ export class EmployeesService {
 
     await this.salaryStructureRepository.save(this.salaryStructureRepository.create({
       employee_id: employee.id,
-      basic_salary: basicSalary,
-      hra,
-      special_allowance: specialAllowance,
-      other_allowance: otherAllowance,
-      gross_salary: grossSalary,
+      basic_salary: components.basic_salary,
+      hra: components.hra,
+      special_allowance: components.special_allowance,
+      other_allowance: components.other_allowance,
+      gross_salary: components.gross_salary,
       ctc,
       effective_from: effectiveFrom,
       is_active: true,
@@ -232,8 +231,7 @@ export class EmployeesService {
   }
 
   private escapeCsv(value: unknown): string {
-    const text = value === null || value === undefined ? '' : String(value);
-    return `"${text.replace(/"/g, '""')}"`;
+    return escapeCsv(value);
   }
 
   generateCsv(employees: Employee[]): string {
@@ -274,7 +272,7 @@ export class EmployeesService {
       return { imported: 0, errors: ['CSV is empty or lacks data rows'] };
     }
 
-    const headers = this.parseCsvLine(lines[0]).map(h => h.trim().toLowerCase());
+    const headers = parseCsvLine(lines[0]).map(h => h.trim().toLowerCase());
     const errors: string[] = [];
     let importedCount = 0;
 
@@ -284,7 +282,7 @@ export class EmployeesService {
 
     for (let i = 1; i < lines.length; i++) {
       try {
-        const values = this.parseCsvLine(lines[i]);
+        const values = parseCsvLine(lines[i]);
         if (values.length < headers.length) {
           errors.push(`Row ${i + 1}: Column count mismatch`);
           continue;
@@ -373,30 +371,6 @@ export class EmployeesService {
     }
 
     return { imported: importedCount, errors };
-  }
-
-  private parseCsvLine(line: string): string[] {
-    const result: string[] = [];
-    let current = '';
-    let inQuotes = false;
-    for (let i = 0; i < line.length; i++) {
-      const char = line[i];
-      if (char === '"') {
-        if (inQuotes && line[i + 1] === '"') {
-          current += '"';
-          i++;
-        } else {
-          inQuotes = !inQuotes;
-        }
-      } else if (char === ',' && !inQuotes) {
-        result.push(current);
-        current = '';
-      } else {
-        current += char;
-      }
-    }
-    result.push(current);
-    return result;
   }
 
   async getFinancialSummary(
@@ -703,7 +677,7 @@ export class EmployeesService {
     // Group by financial year
     const fyGroups: Record<string, typeof filteredPayrolls> = {};
     for (const p of filteredPayrolls) {
-      const fy = p.month >= 4 ? `${p.year}-${p.year + 1}` : `${p.year - 1}-${p.year}`;
+      const fy = getFinancialYear(p.month, p.year);
       if (!fyGroups[fy]) {
         fyGroups[fy] = [];
       }

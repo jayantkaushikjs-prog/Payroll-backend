@@ -5,6 +5,8 @@ import { SalaryStructure } from './salary-structure.entity';
 import { CreateSalaryStructureDto } from './dto/create-salary-structure.dto';
 import { EmployeesService } from '../employees/employees.service';
 import { PFService } from '../pf/pf.service';
+import { parseCsvLine } from '../../common/utils/csv.util';
+import { calculateSalaryComponentsFromCtc } from './utils/salary-components.util';
 
 @Injectable()
 export class SalaryStructuresService {
@@ -23,28 +25,21 @@ export class SalaryStructuresService {
     const basicPercent = createSalaryStructureDto.basic_percent !== undefined ? Number(createSalaryStructureDto.basic_percent) : 50;
     const hraPercent = createSalaryStructureDto.hra_percent !== undefined ? Number(createSalaryStructureDto.hra_percent) : 40;
 
-    const basicRatio = basicPercent / 100;
-    const hraRatio = hraPercent / 100;
-
-    let gross_salary = ctc;
+    let employerContributionRate = 12;
 
     if (employee.pf_deduction !== false) {
       const pfSettings = await this.pfService.findActiveAtDate(createSalaryStructureDto.effective_from);
-      const employerContributionRate = Number(pfSettings.employer_contribution_rate) / 100;
-      
-      const gross_salary_uncapped = ctc / (1 + employerContributionRate);
-      if (gross_salary_uncapped * employerContributionRate > 1800) {
-        gross_salary = ctc - 1800;
-      } else {
-        gross_salary = gross_salary_uncapped;
-      }
+      employerContributionRate = Number(pfSettings.employer_contribution_rate);
     }
 
-    gross_salary = Number(gross_salary.toFixed(2));
-    const basic_salary = Number((basicRatio * gross_salary).toFixed(2));
-    const hra = Number((hraRatio * basic_salary).toFixed(2));
-    const special_allowance = 0;
-    const other_allowance = Number((gross_salary - basic_salary - hra).toFixed(2));
+    const components = calculateSalaryComponentsFromCtc({
+      ctc,
+      basicPercent,
+      hraPercent,
+      pfDeduction: employee.pf_deduction,
+      employerContributionRate,
+      maxPfCap: 1800,
+    });
 
     // Deactivate existing structures for this employee
     await this.salaryStructuresRepository.update(
@@ -55,11 +50,11 @@ export class SalaryStructuresService {
     // Create new active structure
     const newStructure = this.salaryStructuresRepository.create({
       employee_id: createSalaryStructureDto.employee_id,
-      basic_salary,
-      hra,
-      special_allowance,
-      other_allowance,
-      gross_salary,
+      basic_salary: components.basic_salary,
+      hra: components.hra,
+      special_allowance: components.special_allowance,
+      other_allowance: components.other_allowance,
+      gross_salary: components.gross_salary,
       ctc,
       effective_from: createSalaryStructureDto.effective_from,
       is_active: true,
@@ -99,13 +94,13 @@ export class SalaryStructuresService {
       return { imported: 0, errors: ['CSV is empty or lacks data rows'] };
     }
 
-    const headers = this.parseCsvLine(lines[0]).map(h => h.trim().toLowerCase());
+    const headers = parseCsvLine(lines[0]).map(h => h.trim().toLowerCase());
     const errors: string[] = [];
     let importedCount = 0;
 
     for (let i = 1; i < lines.length; i++) {
       try {
-        const values = this.parseCsvLine(lines[i]);
+        const values = parseCsvLine(lines[i]);
         if (values.length < headers.length) {
           errors.push(`Row ${i + 1}: Column count mismatch`);
           continue;
@@ -191,27 +186,4 @@ export class SalaryStructuresService {
     return { imported: importedCount, errors };
   }
 
-  private parseCsvLine(line: string): string[] {
-    const result: string[] = [];
-    let current = '';
-    let inQuotes = false;
-    for (let i = 0; i < line.length; i++) {
-      const char = line[i];
-      if (char === '"') {
-        if (inQuotes && line[i + 1] === '"') {
-          current += '"';
-          i++;
-        } else {
-          inQuotes = !inQuotes;
-        }
-      } else if (char === ',' && !inQuotes) {
-        result.push(current);
-        current = '';
-      } else {
-        current += char;
-      }
-    }
-    result.push(current);
-    return result;
-  }
 }
