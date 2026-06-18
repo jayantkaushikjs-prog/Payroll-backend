@@ -19,6 +19,7 @@ import { Expense } from './modules/expenses/expense.entity';
 import { ExpenseCategory } from './modules/expenses/expense-category.entity';
 import { RefreshToken } from './modules/auth/refresh-token.entity';
 import { BlacklistedToken } from './modules/auth/blacklisted-token.entity';
+import { HrPreviewReview } from './modules/employees/hr-preview-review.entity';
 
 // Modules
 import { AuthModule } from './modules/auth/auth.module';
@@ -36,6 +37,12 @@ import { ExpensesModule } from './modules/expenses/expenses.module';
 // Helpers
 import { Role } from './common/enums/role.enum';
 import * as bcrypt from 'bcryptjs';
+import {
+  calculateSalaryComponentsFromCtc,
+  EMPLOYEE_ESI_RATE,
+  isEsiApplicableForBasic,
+  isPfApplicableForBasic,
+} from './modules/salary-structures/utils/salary-components.util';
 
 @Module({
   imports: [
@@ -61,6 +68,7 @@ import * as bcrypt from 'bcryptjs';
         ExpenseCategory,
         RefreshToken,
         BlacklistedToken,
+        HrPreviewReview,
       ],
       synchronize: false, // For development ease. Production should use migrations.
     }),
@@ -79,6 +87,7 @@ import * as bcrypt from 'bcryptjs';
       ExpenseCategory,
       RefreshToken,
       BlacklistedToken,
+      HrPreviewReview,
     ]),
     AuthModule,
     UsersModule,
@@ -212,10 +221,14 @@ export class AppModule implements OnApplicationBootstrap {
       },
     ];
 
-    const salaries = [
-      { basic_salary: 47500, hra: 19000, special_allowance: 0, other_allowance: 28500, gross_salary: 95000, ctc: 96800 },
-      { basic_salary: 38000, hra: 15200, special_allowance: 0, other_allowance: 22800, gross_salary: 76000, ctc: 77800 },
-    ];
+    const salaries = [96800, 77800].map(ctc => calculateSalaryComponentsFromCtc({
+      ctc,
+      basicPercent: 50,
+      hraPercent: 40,
+      pfDeduction: true,
+      employerContributionRate: 12,
+      maxPfCap: 1800,
+    }));
 
     for (let i = 0; i < employeesData.length; i++) {
       const emp = await this.employeeRepo.save(this.employeeRepo.create(employeesData[i]));
@@ -238,10 +251,12 @@ export class AppModule implements OnApplicationBootstrap {
         // Compute standard net: no non payable days, no advance, direct tax deduction
         const gross = salaries[i].gross_salary;
         const basic = salaries[i].basic_salary;
-        const pf = basic * 0.12;
+        const ctc = salaries[i].ctc;
+        const pf = isPfApplicableForBasic(basic, true) ? Math.min(basic * 0.12, 1800) : 0;
+        const esi = isEsiApplicableForBasic(basic) ? Number((basic * EMPLOYEE_ESI_RATE).toFixed(2)) : 0;
 
-        // Calculate progressive tax on gross * 12
-        const annualGross = gross * 12;
+        // Calculate progressive tax on taxable CTC * 12
+        const annualGross = ctc * 12;
         let annualTax = 0;
         if (annualGross > 2400000) {
           annualTax += (annualGross - 2400000) * 0.30 + 400000 * 0.25 + 400000 * 0.20 + 400000 * 0.15 + 400000 * 0.10 + 400000 * 0.05;
@@ -257,7 +272,7 @@ export class AppModule implements OnApplicationBootstrap {
           annualTax += (annualGross - 400000) * 0.05;
         }
         const monthlyTax = Number((annualTax / 12).toFixed(2));
-        const net = gross - pf - monthlyTax;
+        const net = gross + basic - pf - esi - monthlyTax;
 
         await this.payrollRepo.save(this.payrollRepo.create({
           employee_id: emp.id,

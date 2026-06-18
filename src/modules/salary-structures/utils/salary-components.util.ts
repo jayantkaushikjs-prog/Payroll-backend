@@ -14,30 +14,41 @@ export interface SalaryComponents {
   other_allowance: number;
   gross_salary: number;
   ctc: number;
+  employer_pf: number;
+  employer_esi: number;
+}
+
+export const BASIC_PERCENT_OF_CTC = 50;
+export const HRA_PERCENT_OF_BASIC = 40;
+export const PF_WAGE_LIMIT = 15000;
+export const ESI_WAGE_LIMIT = 21000;
+export const EMPLOYEE_ESI_RATE = 0.0075;
+export const EMPLOYER_ESI_RATE = 0.0325;
+
+export function isPfApplicableForBasic(basicSalary: number, existingPfMember?: boolean): boolean {
+  return existingPfMember === true || basicSalary <= PF_WAGE_LIMIT;
+}
+
+export function isEsiApplicableForBasic(basicSalary: number): boolean {
+  return basicSalary < ESI_WAGE_LIMIT;
 }
 
 export function calculateSalaryComponentsFromCtc(input: SalaryComponentInput): SalaryComponents {
   const ctc = Number(input.ctc);
-  const basicRatio = Number(input.basicPercent ?? 50) / 100;
-  const hraRatio = Number(input.hraPercent ?? 40) / 100;
+  const basicRatio = Number(input.basicPercent ?? BASIC_PERCENT_OF_CTC) / 100;
+  const hraRatio = Number(input.hraPercent ?? HRA_PERCENT_OF_BASIC) / 100;
   const employerContributionRate = Number(input.employerContributionRate ?? 12) / 100;
   const maxPfCap = Number(input.maxPfCap ?? 1800);
 
-  let gross_salary = ctc;
-  if (input.pfDeduction !== false) {
-    const gross_salary_uncapped = ctc / (1 + employerContributionRate);
-    if (gross_salary_uncapped * employerContributionRate > maxPfCap) {
-      gross_salary = ctc - maxPfCap;
-    } else {
-      gross_salary = gross_salary_uncapped;
-    }
-  }
-
-  gross_salary = Number(gross_salary.toFixed(2));
-  const basic_salary = Number((basicRatio * gross_salary).toFixed(2));
+  const basic_salary = Number((basicRatio * ctc).toFixed(2));
   const hra = Number((hraRatio * basic_salary).toFixed(2));
+  const pfApplicable = isPfApplicableForBasic(basic_salary, input.pfDeduction !== false);
+  const esiApplicable = isEsiApplicableForBasic(basic_salary);
+  const employer_pf = pfApplicable ? Number(Math.min(basic_salary * employerContributionRate, maxPfCap).toFixed(2)) : 0;
+  const employer_esi = esiApplicable ? Number((basic_salary * EMPLOYER_ESI_RATE).toFixed(2)) : 0;
+  const gross_salary = Number((ctc - basic_salary - employer_pf - employer_esi).toFixed(2));
   const special_allowance = 0;
-  const other_allowance = Number((gross_salary - basic_salary - hra).toFixed(2));
+  const other_allowance = Number((basic_salary - hra).toFixed(2));
 
   return {
     basic_salary,
@@ -46,6 +57,8 @@ export function calculateSalaryComponentsFromCtc(input: SalaryComponentInput): S
     other_allowance,
     gross_salary,
     ctc,
+    employer_pf,
+    employer_esi,
   };
 }
 
@@ -56,21 +69,15 @@ export function calculateSalaryComponentsFromExistingRatios(
   const employerContributionRate = Number(input.employerContributionRate ?? 12) / 100;
   const maxPfCap = Number(input.maxPfCap ?? 1800);
 
-  let gross_salary = ctc;
-  if (input.pfDeduction !== false) {
-    const grossSalaryUncapped = ctc / (1 + employerContributionRate);
-    if (grossSalaryUncapped * employerContributionRate > maxPfCap) {
-      gross_salary = ctc - maxPfCap;
-    } else {
-      gross_salary = grossSalaryUncapped;
-    }
-  }
-
-  gross_salary = Number(gross_salary.toFixed(2));
-  const basic_salary = Number((input.basicRatio * gross_salary).toFixed(2));
+  const basic_salary = Number((input.basicRatio * ctc).toFixed(2));
   const hra = Number((input.hraRatio * basic_salary).toFixed(2));
+  const pfApplicable = isPfApplicableForBasic(basic_salary, input.pfDeduction !== false);
+  const esiApplicable = isEsiApplicableForBasic(basic_salary);
+  const employer_pf = pfApplicable ? Number(Math.min(basic_salary * employerContributionRate, maxPfCap).toFixed(2)) : 0;
+  const employer_esi = esiApplicable ? Number((basic_salary * EMPLOYER_ESI_RATE).toFixed(2)) : 0;
+  const gross_salary = Number((ctc - basic_salary - employer_pf - employer_esi).toFixed(2));
   const special_allowance = 0;
-  const other_allowance = Number((gross_salary - basic_salary - hra).toFixed(2));
+  const other_allowance = Number((basic_salary - hra).toFixed(2));
 
   return {
     basic_salary,
@@ -79,6 +86,7 @@ export function calculateSalaryComponentsFromExistingRatios(
     other_allowance,
     gross_salary,
     ctc,
+    employer_pf,
+    employer_esi,
   };
 }
-

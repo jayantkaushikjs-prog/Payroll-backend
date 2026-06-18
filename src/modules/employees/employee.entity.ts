@@ -50,6 +50,9 @@ export class Employee {
   @Column({ default: false })
   pf_deduction: boolean;
 
+  @Column({ nullable: true })
+  pf_uan: string;
+
   @Column({ default: true })
   tax_deduction: boolean;
 

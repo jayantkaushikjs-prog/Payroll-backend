@@ -9,9 +9,10 @@ import { Payroll } from '../payroll/payroll.entity';
 import { SalaryStructure } from '../salary-structures/salary-structure.entity';
 import { EmployeeAdvance } from '../advances/employee-advance.entity';
 import { PFSettings } from '../pf/pf-settings.entity';
+import { HrPreviewReview } from './hr-preview-review.entity';
 
 @Module({
-  imports: [TypeOrmModule.forFeature([Employee, Department, Designation, Payroll, SalaryStructure, EmployeeAdvance, PFSettings])],
+  imports: [TypeOrmModule.forFeature([Employee, Department, Designation, Payroll, SalaryStructure, EmployeeAdvance, PFSettings, HrPreviewReview])],
   providers: [EmployeesService],
   controllers: [EmployeesController],
   exports: [EmployeesService],

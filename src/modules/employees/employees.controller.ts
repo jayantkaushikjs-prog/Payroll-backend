@@ -14,6 +14,18 @@ import { getRolePermissions } from '../../config/rbac.config';
 export class EmployeesController {
   constructor(private readonly employeesService: EmployeesService) {}
 
+  private assertPreviewRole(role: Role, allowedRoles: Role[]) {
+    if (!allowedRoles.includes(role)) {
+      throw new ForbiddenException('You do not have permission to access this preview review action');
+    }
+  }
+
+  private assertPreviewMonth(month?: string) {
+    if (!month || !/^\d{4}-\d{2}$/.test(month)) {
+      throw new ForbiddenException('Preview month is required in YYYY-MM format');
+    }
+  }
+
   @Get('csv')
   @RequirePermissions(Permission.EXPORT_EMPLOYEES)
   async downloadCsv(@Res() res: Response) {
@@ -76,6 +88,38 @@ export class EmployeesController {
       return this.employeesService.findAll();
     }
     throw new ForbiddenException('You do not have permission to view employees');
+  }
+
+  @Get('preview-review')
+  getPreviewReview(@Req() req, @Query('month') month: string) {
+    this.assertPreviewMonth(month);
+    this.assertPreviewRole(req.user.role as Role, [Role.SUPER_ADMIN, Role.HR, Role.FINANCE]);
+    return this.employeesService.getPreviewReview(month);
+  }
+
+  @Put('preview-review/status')
+  updatePreviewStatus(
+    @Req() req,
+    @Body('month') month: string,
+    @Body('status') status: 'done' | 'undone',
+  ) {
+    this.assertPreviewMonth(month);
+    this.assertPreviewRole(req.user.role as Role, [Role.SUPER_ADMIN, Role.HR]);
+    if (status !== 'done' && status !== 'undone') {
+      throw new ForbiddenException('Status must be done or undone');
+    }
+    return this.employeesService.updatePreviewReviewStatus(month, status);
+  }
+
+  @Put('preview-review/finance-remarks')
+  updatePreviewFinanceRemarks(
+    @Req() req,
+    @Body('month') month: string,
+    @Body('finance_remarks') financeRemarks: string,
+  ) {
+    this.assertPreviewMonth(month);
+    this.assertPreviewRole(req.user.role as Role, [Role.SUPER_ADMIN, Role.FINANCE]);
+    return this.employeesService.updatePreviewFinanceRemarks(month, financeRemarks || '');
   }
 
   @Get(':id')

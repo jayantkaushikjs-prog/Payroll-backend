@@ -22,8 +22,6 @@ export class SalaryStructuresService {
     const employee = await this.employeesService.findOne(createSalaryStructureDto.employee_id);
 
     const ctc = Number(createSalaryStructureDto.ctc);
-    const basicPercent = createSalaryStructureDto.basic_percent !== undefined ? Number(createSalaryStructureDto.basic_percent) : 50;
-    const hraPercent = createSalaryStructureDto.hra_percent !== undefined ? Number(createSalaryStructureDto.hra_percent) : 40;
 
     let employerContributionRate = 12;
 
@@ -34,8 +32,8 @@ export class SalaryStructuresService {
 
     const components = calculateSalaryComponentsFromCtc({
       ctc,
-      basicPercent,
-      hraPercent,
+      basicPercent: 50,
+      hraPercent: 40,
       pfDeduction: employee.pf_deduction,
       employerContributionRate,
       maxPfCap: 1800,

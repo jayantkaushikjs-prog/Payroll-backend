@@ -109,6 +109,12 @@ export class CreateEmployeeDto {
   pf_deduction?: boolean;
 
   @IsOptional()
+  @IsString()
+  @Transform(({ value }) => typeof value === 'string' ? value.trim() || undefined : value)
+  @Length(5, 50, { message: 'PF No. / UAN must be between 5 and 50 characters' })
+  pf_uan?: string;
+
+  @IsOptional()
   @IsBoolean()
   tax_deduction?: boolean;
 

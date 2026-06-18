@@ -10,6 +10,7 @@ import { Payroll } from '../payroll/payroll.entity';
 import { SalaryStructure } from '../salary-structures/salary-structure.entity';
 import { EmployeeAdvance } from '../advances/employee-advance.entity';
 import { PFSettings } from '../pf/pf-settings.entity';
+import { HrPreviewReview } from './hr-preview-review.entity';
 import { calculateAnnualTax } from '../../utils/tax-calculator.util';
 import { escapeCsv, parseCsvLine } from '../../common/utils/csv.util';
 import { getFinancialYear } from '../../common/utils/financial-year.util';
@@ -32,6 +33,8 @@ export class EmployeesService {
     private departmentRepository: Repository<Department>,
     @InjectRepository(Designation)
     private designationRepository: Repository<Designation>,
+    @InjectRepository(HrPreviewReview)
+    private hrPreviewReviewRepository: Repository<HrPreviewReview>,
   ) {}
 
   async create(createEmployeeDto: CreateEmployeeDto): Promise<Employee> {
@@ -69,6 +72,59 @@ export class EmployeesService {
       throw new NotFoundException(`Employee with ID ${id} not found`);
     }
     return employee;
+  }
+
+  private async getOrCreatePreviewReview(month: string): Promise<HrPreviewReview> {
+    let review = await this.hrPreviewReviewRepository.findOne({ where: { month } });
+    if (!review) {
+      review = this.hrPreviewReviewRepository.create({
+        month,
+        status: 'undone',
+        finance_remarks: '',
+        logs: [],
+      });
+      review = await this.hrPreviewReviewRepository.save(review);
+    }
+    return review;
+  }
+
+  async getPreviewReview(month: string): Promise<HrPreviewReview> {
+    return this.getOrCreatePreviewReview(month);
+  }
+
+  async updatePreviewReviewStatus(month: string, status: 'done' | 'undone'): Promise<HrPreviewReview> {
+    const review = await this.getOrCreatePreviewReview(month);
+    const previousStatus = review.status;
+    review.status = status;
+    if (status === 'done') {
+      review.hr_marked_done_at = new Date();
+    } else {
+      review.hr_marked_undone_at = new Date();
+    }
+    review.logs = [
+      ...(review.logs || []),
+      {
+        action: 'status_changed',
+        from: previousStatus,
+        to: status,
+        created_at: new Date().toISOString(),
+      },
+    ];
+    return this.hrPreviewReviewRepository.save(review);
+  }
+
+  async updatePreviewFinanceRemarks(month: string, financeRemarks: string): Promise<HrPreviewReview> {
+    const review = await this.getOrCreatePreviewReview(month);
+    review.finance_remarks = financeRemarks || '';
+    review.logs = [
+      ...(review.logs || []),
+      {
+        action: 'finance_remarks_updated',
+        remarks: review.finance_remarks,
+        created_at: new Date().toISOString(),
+      },
+    ];
+    return this.hrPreviewReviewRepository.save(review);
   }
 
   async update(id: number, updateEmployeeDto: UpdateEmployeeDto): Promise<Employee> {
@@ -126,29 +182,18 @@ export class EmployeesService {
       return;
     }
 
-    const basicRatio = activeStructure && Number(activeStructure.gross_salary) > 0
-      ? Number(activeStructure.basic_salary) / Number(activeStructure.gross_salary)
-      : 0.5;
-    const hraRatio = activeStructure && Number(activeStructure.basic_salary) > 0
-      ? Number(activeStructure.hra) / Number(activeStructure.basic_salary)
-      : 0.4;
-
     const effectiveFrom = preferredEffectiveFrom || new Date().toISOString().split('T')[0];
-    let employerContributionRate = 12;
-    let maxPfCap = 1800;
-    if (employee.pf_deduction !== false) {
-      const pfSettings = await this.pfSettingsRepository.findOne({
-        where: { effective_date: LessThanOrEqual(effectiveFrom) },
-        order: { effective_date: 'DESC' },
-      });
-      employerContributionRate = Number(pfSettings?.employer_contribution_rate ?? 12);
-      maxPfCap = Number(pfSettings?.max_pf_cap ?? 1800);
-    }
+    const pfSettings = await this.pfSettingsRepository.findOne({
+      where: { effective_date: LessThanOrEqual(effectiveFrom) },
+      order: { effective_date: 'DESC' },
+    });
+    const employerContributionRate = Number(pfSettings?.employer_contribution_rate ?? 12);
+    const maxPfCap = Number(pfSettings?.max_pf_cap ?? 1800);
 
     const components = calculateSalaryComponentsFromExistingRatios({
       ctc,
-      basicRatio,
-      hraRatio,
+      basicRatio: 0.5,
+      hraRatio: 0.4,
       pfDeduction: employee.pf_deduction,
       employerContributionRate,
       maxPfCap,
@@ -246,6 +291,7 @@ export class EmployeesService {
       'Bank Name',
       'Account Number',
       'IFSC',
+      'PF No. / UAN',
       'Active Status',
     ];
 
@@ -260,6 +306,7 @@ export class EmployeesService {
       this.escapeCsv(emp.bank_name),
       this.escapeCsv(emp.account_number),
       this.escapeCsv(emp.ifsc),
+      this.escapeCsv(emp.pf_uan),
       emp.active_status ? 'Active' : 'Inactive',
     ]);
 
@@ -301,6 +348,7 @@ export class EmployeesService {
           else if (header === 'bank name' || header === 'bank_name') data.bank_name = val;
           else if (header === 'account number' || header === 'account_number') data.account_number = val;
           else if (header === 'ifsc') data.ifsc = val;
+          else if (header === 'pf no. / uan' || header === 'pf no / uan' || header === 'pf_uan' || header === 'uan') data.pf_uan = val || null;
           else if (header === 'tax regime' || header === 'tax_regime') data.tax_regime = val || 'new';
           else if (header === 'active status' || header === 'active_status') {
             data.active_status = val?.toLowerCase() === 'active' || val?.toLowerCase() === 'true' || val === '1';
