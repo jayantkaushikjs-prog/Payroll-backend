@@ -23,6 +23,7 @@ jobs:
 
             cd /var/www/html/node-js/payroll-management-backend
             git pull origin dev
+            npm run migration:run
             pm2 restart payroll-management-backend
 
 
