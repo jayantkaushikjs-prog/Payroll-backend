@@ -20,6 +20,7 @@ export class HrPreviewReview {
     from?: string;
     to?: string;
     remarks?: string;
+    email?: string;
     created_at: string;
   }>;
 

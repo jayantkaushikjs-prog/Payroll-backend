@@ -108,7 +108,7 @@ export class EmployeesController {
     if (status !== 'done' && status !== 'undone') {
       throw new ForbiddenException('Status must be done or undone');
     }
-    return this.employeesService.updatePreviewReviewStatus(month, status);
+    return this.employeesService.updatePreviewReviewStatus(month, status, req.user?.email);
   }
 
   @Put('preview-review/finance-remarks')
@@ -119,7 +119,7 @@ export class EmployeesController {
   ) {
     this.assertPreviewMonth(month);
     this.assertPreviewRole(req.user.role as Role, [Role.SUPER_ADMIN, Role.FINANCE]);
-    return this.employeesService.updatePreviewFinanceRemarks(month, financeRemarks || '');
+    return this.employeesService.updatePreviewFinanceRemarks(month, financeRemarks || '', req.user?.email);
   }
 
   @Get(':id')

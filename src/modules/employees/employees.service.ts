@@ -92,7 +92,7 @@ export class EmployeesService {
     return this.getOrCreatePreviewReview(month);
   }
 
-  async updatePreviewReviewStatus(month: string, status: 'done' | 'undone'): Promise<HrPreviewReview> {
+  async updatePreviewReviewStatus(month: string, status: 'done' | 'undone', userEmail?: string): Promise<HrPreviewReview> {
     const review = await this.getOrCreatePreviewReview(month);
     const previousStatus = review.status;
     review.status = status;
@@ -107,13 +107,14 @@ export class EmployeesService {
         action: 'status_changed',
         from: previousStatus,
         to: status,
+        email: userEmail,
         created_at: new Date().toISOString(),
       },
     ];
     return this.hrPreviewReviewRepository.save(review);
   }
 
-  async updatePreviewFinanceRemarks(month: string, financeRemarks: string): Promise<HrPreviewReview> {
+  async updatePreviewFinanceRemarks(month: string, financeRemarks: string, userEmail?: string): Promise<HrPreviewReview> {
     const review = await this.getOrCreatePreviewReview(month);
     review.finance_remarks = financeRemarks || '';
     review.logs = [
@@ -121,6 +122,7 @@ export class EmployeesService {
       {
         action: 'finance_remarks_updated',
         remarks: review.finance_remarks,
+        email: userEmail,
         created_at: new Date().toISOString(),
       },
     ];
