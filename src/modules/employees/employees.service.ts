@@ -468,6 +468,10 @@ export class EmployeesService {
     const pfDeducted = payrolls.reduce((sum, p) => sum + Number(p.pf_deduction), 0);
     const taxDeducted = payrolls.reduce((sum, p) => sum + Number(p.tax_deduction), 0);
     const advanceRecovered = payrolls.reduce((sum, p) => sum + Number(p.advance_recovery), 0);
+    const esiDeducted = payrolls.reduce((sum, p) => {
+      const breakdown = p.tax_breakdown_json as any;
+      return sum + Number(breakdown?.employeeEsiDeduction || 0);
+    }, 0);
 
     // Get salary structure to calculate remaining/to-be-paid months
     const structure = await this.salaryStructureRepository.findOne({
@@ -476,6 +480,7 @@ export class EmployeesService {
 
     let amountToBePaid = 0;
     let expectedPFRemaining = 0;
+    let expectedESIRemaining = 0;
     let expectedTaxRemaining = 0;
     let remainingMonthsCount = 0;
 
@@ -497,6 +502,9 @@ export class EmployeesService {
       });
       const pfRate = pfSettings ? Number(pfSettings.employee_contribution_rate) / 100 : 0.12;
       const maxPfCap = pfSettings ? Number(pfSettings.max_pf_cap) : 1800;
+      const pfContributionType = pfSettings ? pfSettings.pf_contribution_type : 2;
+      const esiContributionType = pfSettings ? pfSettings.esi_contribution_type : 2;
+      const esiEmployeeRate = pfSettings ? Number(pfSettings.esi_employee_contribution_rate) / 100 : 0.0075;
 
       // Use the start date's year to define the target FY for tax calculations
       const fyYear = startDate.getMonth() >= 3 ? startDate.getFullYear() : startDate.getFullYear() - 1;
@@ -518,18 +526,26 @@ export class EmployeesService {
       const monthlyTdsRemaining = remainingMonthsCount > 0 ? Number((remainingAnnualTax / remainingMonthsCount).toFixed(2)) : 0;
 
       for (const m of remainingMonths) {
-        // Expected PF
+        // Expected PF (based on contribution type)
         let pf = 0;
-        if (employee.pf_deduction !== false) {
-          pf = Math.min(Number(structure.gross_salary) * pfRate, maxPfCap);
+        if (pfContributionType === 2 && employee.pf_deduction !== false) {
+          pf = Math.min(Number(structure.basic_salary) * pfRate, maxPfCap);
+        }
+
+        // Expected ESI (based on contribution type)
+        let esi = 0;
+        const basicSalary = Number(structure.basic_salary);
+        if (esiContributionType === 2 && basicSalary < 21000) { // ESI wage limit
+          esi = basicSalary * esiEmployeeRate;
         }
 
         // Expected Tax (TDS)
         const tax = employee.tax_deduction !== false ? monthlyTdsRemaining : 0;
 
-        const net = monthlyGross - pf - tax;
+        const net = monthlyGross - pf - esi - tax;
         amountToBePaid += net;
         expectedPFRemaining += pf;
+        expectedESIRemaining += esi;
         expectedTaxRemaining += tax;
       }
     }
@@ -569,6 +585,8 @@ export class EmployeesService {
       amountToBePaid,
       pfDeducted,
       expectedPFRemaining,
+      esiDeducted,
+      expectedESIRemaining,
       taxDeducted,
       expectedTaxRemaining,
       advanceRecovered,

@@ -1,4 +1,4 @@
-import { Controller, Get, Post, Body, Param, Query, Delete, UseGuards } from '@nestjs/common';
+import { Controller, Get, Post, Put, Body, Param, Query, Delete, UseGuards } from '@nestjs/common';
 import { PFService } from './pf.service';
 import { CreatePFSettingsDto } from './dto/create-pf-settings.dto';
 import { JwtAuthGuard } from '../../common/guards/jwt-auth.guard';
@@ -28,6 +28,12 @@ export class PFController {
   findActive(@Query('date') date?: string) {
     const checkDate = date || new Date().toISOString().split('T')[0];
     return this.pfService.findActiveAtDate(checkDate);
+  }
+
+  @Put(':id')
+  @RequirePermissions(Permission.MANAGE_PF_SETTINGS)
+  update(@Param('id') id: string, @Body() updateDto: CreatePFSettingsDto) {
+    return this.pfService.update(+id, updateDto);
   }
 
   @Delete(':id')

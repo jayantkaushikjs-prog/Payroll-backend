@@ -57,6 +57,15 @@ export class PFService {
     return setting;
   }
 
+  async update(id: number, updateData: Partial<CreatePFSettingsDto>): Promise<PFSettings> {
+    const settings = await this.pfSettingsRepository.findOne({ where: { id } });
+    if (!settings) {
+      throw new NotFoundException(`PF Settings with ID ${id} not found`);
+    }
+    Object.assign(settings, updateData);
+    return this.pfSettingsRepository.save(settings);
+  }
+
   async remove(id: number): Promise<void> {
     await this.pfSettingsRepository.delete(id);
   }

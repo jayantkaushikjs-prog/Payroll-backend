@@ -115,6 +115,10 @@ export class UpdateEmployeeDto {
 
   @IsOptional()
   @IsBoolean()
+  esi_deduction?: boolean;
+
+  @IsOptional()
+  @IsBoolean()
   tax_deduction?: boolean;
 
   @IsOptional()

@@ -53,6 +53,9 @@ export class Employee {
   @Column({ nullable: true })
   pf_uan: string;
 
+  @Column({ default: false })
+  esi_deduction: boolean;
+
   @Column({ default: true })
   tax_deduction: boolean;
 

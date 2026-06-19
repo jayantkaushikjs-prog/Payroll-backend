@@ -17,7 +17,6 @@ import {
 } from '../../common/utils/financial-year.util';
 import {
   calculateSalaryComponentsFromCtc,
-  EMPLOYEE_ESI_RATE,
   isEsiApplicableForBasic,
   isPfApplicableForBasic,
 } from '../salary-structures/utils/salary-components.util';
@@ -130,12 +129,18 @@ export class PayrollService {
       pfDeduction: employee.pf_deduction,
       employerContributionRate: Number(pfSettings.employer_contribution_rate),
       maxPfCap: pfSettings.max_pf_cap ? Number(pfSettings.max_pf_cap) : 1800,
+      employeeEsiRate: Number(pfSettings.esi_employee_contribution_rate) / 100,
+      employerEsiRate: Number(pfSettings.esi_contribution_rate) / 100,
     });
 
     const grossSalary = Number(components.gross_salary);
     const basicSalary = Number(components.basic_salary);
     const employerPf = Number(components.employer_pf);
     const employerEsi = Number(components.employer_esi);
+
+    // Get contribution types for use in calculations
+    const pfContributionType = pfSettings.pf_contribution_type ?? 2; // Default to employee contribution
+    const esiContributionType = pfSettings.esi_contribution_type ?? 2; // Default to employee contribution
 
     // 2. Compute Days in Month
     const daysInMonth = new Date(year, month, 0).getDate();
@@ -156,18 +161,23 @@ export class PayrollService {
     const payableGross = Math.max(0, grossSalary - nonPayableDeduction);
     const payableBasic = Math.max(0, Number((basicSalary - nonPayableBasicDeduction).toFixed(2)));
 
-    // 4. PF Deduction
+    // 4. PF Deduction (based on contribution type)
     let pfDeduction = 0;
-    if (isPfApplicableForBasic(basicSalary, employee.pf_deduction !== false)) {
+    if (pfContributionType === 2 && isPfApplicableForBasic(basicSalary, employee.pf_deduction !== false)) {
       const calculatedPf = Number((payableBasic * (Number(pfSettings.employee_contribution_rate) / 100)).toFixed(2));
       const maxPfCap = pfSettings.max_pf_cap ? Number(pfSettings.max_pf_cap) : 1800.00;
       pfDeduction = Math.min(maxPfCap, calculatedPf);
     }
 
-    // 5. ESI Deduction
-    const employeeEsiDeduction = isEsiApplicableForBasic(basicSalary)
-      ? Number((payableBasic * EMPLOYEE_ESI_RATE).toFixed(2))
-      : 0;
+    // 5. ESI Deduction (based on contribution type)
+    let employeeEsiDeduction = 0;
+    const employeeEsiRate = Number(pfSettings.esi_employee_contribution_rate) / 100;
+    if (esiContributionType === 2 && isEsiApplicableForBasic(basicSalary)) {
+      employeeEsiDeduction = Number((payableBasic * employeeEsiRate).toFixed(2));
+    }
+
+    // Calculate mandatory deductions (only employee contribution type)
+    let mandatoryDeductions = 0; // Will be updated after tax calculation
 
     // 6. Tax Deduction (Progressive Slabs)
     let taxDeduction = 0;
@@ -260,6 +270,15 @@ export class PayrollService {
       });
     }
 
+    // Update mandatory deductions with tax and employee contribution type
+    mandatoryDeductions = taxDeduction;
+    if (pfContributionType === 2) {
+      mandatoryDeductions += pfDeduction;
+    }
+    if (esiContributionType === 2) {
+      mandatoryDeductions += employeeEsiDeduction;
+    }
+
     // 7. Advance Recovery
     const activeAdvances = await this.advancesService.findActiveForEmployeeAtDate(employeeId, month, year);
     let advanceRecovery = 0;
@@ -280,8 +299,8 @@ export class PayrollService {
       return month === upcomingMonth && year === upcomingYear;
     });
 
-    // Available salary left for advances after mandatory government/statutory deductions.
-    let availableForAdvances = Math.max(0, Number((payableGross + payableBasic - pfDeduction - employeeEsiDeduction - taxDeduction).toFixed(2)));
+    // Available salary left for advances after mandatory government/statutory deductions (only employee contribution type)
+    let availableForAdvances = Math.max(0, Number((payableGross + payableBasic - mandatoryDeductions).toFixed(2)));
 
     // Process Advance Salary first if present for this month
     for (const adv of activeAdvances) {
@@ -352,8 +371,8 @@ export class PayrollService {
 
     advanceRecovery = Number(advanceRecovery.toFixed(2));
 
-    // 8. Net Salary
-    let netSalary = Number(Math.max(0, payableGross + payableBasic - pfDeduction - employeeEsiDeduction - taxDeduction - advanceRecovery).toFixed(2));
+    // 8. Net Salary (only deduct employee contribution type)
+    let netSalary = Number(Math.max(0, payableGross + payableBasic - mandatoryDeductions - advanceRecovery).toFixed(2));
     if (hasAdvanceSalaryThisMonth) {
       netSalary = 0;
     }

@@ -18,6 +18,23 @@ export class CreatePFSettingsDto {
   @IsOptional()
   max_pf_cap?: number;
 
+  @IsOptional()
+  @IsNumber()
+  @Min(0)
+  @Max(100)
+  esi_contribution_rate?: number;
+
+  @IsOptional()
+  @IsNumber()
+  @Min(0)
+  @Max(100)
+  esi_employee_contribution_rate?: number;
+
+  @IsOptional()
+  @IsNumber()
+  @Min(0)
+  professional_tax?: number;
+
   @IsNotEmpty({ message: 'Effective date is required' })
   @IsDateString({}, { message: 'Effective date must be a valid ISO date string (YYYY-MM-DD)' })
   effective_date: string; // YYYY-MM-DD

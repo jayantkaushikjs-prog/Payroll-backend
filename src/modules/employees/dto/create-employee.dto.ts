@@ -116,6 +116,10 @@ export class CreateEmployeeDto {
 
   @IsOptional()
   @IsBoolean()
+  esi_deduction?: boolean;
+
+  @IsOptional()
+  @IsBoolean()
   tax_deduction?: boolean;
 
   @IsOptional()
