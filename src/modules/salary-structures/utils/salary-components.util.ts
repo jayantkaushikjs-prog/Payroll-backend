@@ -32,7 +32,7 @@ export function isPfApplicableForBasic(basicSalary: number, existingPfMember?: b
 }
 
 export function isEsiApplicableForBasic(basicSalary: number): boolean {
-  return basicSalary < ESI_WAGE_LIMIT;
+  return basicSalary <= ESI_WAGE_LIMIT;
 }
 
 export function calculateSalaryComponentsFromCtc(input: SalaryComponentInput): SalaryComponents {
