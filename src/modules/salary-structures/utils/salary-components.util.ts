@@ -50,9 +50,9 @@ export function calculateSalaryComponentsFromCtc(input: SalaryComponentInput): S
   const esiApplicable = isEsiApplicableForBasic(basic_salary);
   const employer_pf = pfApplicable ? Number(Math.min(basic_salary * employerContributionRate, maxPfCap).toFixed(2)) : 0;
   const employer_esi = esiApplicable ? Number((basic_salary * employerEsiRate).toFixed(2)) : 0;
-  const gross_salary = Number((ctc - basic_salary - employer_pf - employer_esi).toFixed(2));
+  const gross_salary = Number((ctc - employer_pf - employer_esi).toFixed(2));
   const special_allowance = 0;
-  const other_allowance = Number((basic_salary - hra).toFixed(2));
+  const other_allowance = Math.max(0, Number((gross_salary - basic_salary - hra).toFixed(2)));
 
   return {
     basic_salary,
@@ -81,9 +81,9 @@ export function calculateSalaryComponentsFromExistingRatios(
   const esiApplicable = isEsiApplicableForBasic(basic_salary);
   const employer_pf = pfApplicable ? Number(Math.min(basic_salary * employerContributionRate, maxPfCap).toFixed(2)) : 0;
   const employer_esi = esiApplicable ? Number((basic_salary * employerEsiRate).toFixed(2)) : 0;
-  const gross_salary = Number((ctc - basic_salary - employer_pf - employer_esi).toFixed(2));
+  const gross_salary = Number((ctc - employer_pf - employer_esi).toFixed(2));
   const special_allowance = 0;
-  const other_allowance = Number((basic_salary - hra).toFixed(2));
+  const other_allowance = Math.max(0, Number((gross_salary - basic_salary - hra).toFixed(2)));
 
   return {
     basic_salary,
