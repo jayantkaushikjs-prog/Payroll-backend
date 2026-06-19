@@ -117,6 +117,7 @@ export class EmployeesService {
   async updatePreviewFinanceRemarks(month: string, financeRemarks: string, userEmail?: string): Promise<HrPreviewReview> {
     const review = await this.getOrCreatePreviewReview(month);
     review.finance_remarks = financeRemarks || '';
+    review.finance_remarks_updated_at = new Date();
     review.logs = [
       ...(review.logs || []),
       {

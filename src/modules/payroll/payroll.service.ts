@@ -100,288 +100,181 @@ export class PayrollService {
       throw new BadRequestException(`Employee ${employee.name} is not payable for ${month}/${year}: ${employmentProration.reason}`);
     }
 
-    // 1. Fetch Salary Structure
+    // 1. Salary structure
     let structure;
     try {
       structure = await this.salaryStructuresService.findActiveByEmployee(employeeId);
-    } catch (error) {
+    } catch {
       throw new BadRequestException(`Salary structure is missing for employee ${employee.name}`);
     }
 
     let monthlyCtc = Number(structure.ctc);
 
-    // Apply appraisal if active and effective
+    // Apply appraisal if effective this month
     if (Number(employee.appraisal) > 0 && employee.appraisal_effective_date) {
-      const payrollDate = new Date(year, month - 1, 1);
-      const effectiveDate = new Date(employee.appraisal_effective_date);
-      const payrollMonthStart = new Date(payrollDate.getFullYear(), payrollDate.getMonth(), 1);
-      const effectiveMonthStart = new Date(effectiveDate.getFullYear(), effectiveDate.getMonth(), 1);
-      if (payrollMonthStart >= effectiveMonthStart) {
-        monthlyCtc += Number(employee.appraisal);
-      }
+      const effectiveMonthStart = new Date(new Date(employee.appraisal_effective_date).getFullYear(), new Date(employee.appraisal_effective_date).getMonth(), 1);
+      const payrollMonthStart = new Date(year, month - 1, 1);
+      if (payrollMonthStart >= effectiveMonthStart) monthlyCtc += Number(employee.appraisal);
     }
 
     const pfSettings = await this.pfService.findActiveAtDate(`${year}-${String(month).padStart(2, '0')}-01`);
-    const components = calculateSalaryComponentsFromCtc({
-      ctc: monthlyCtc,
-      basicPercent: 50,
-      hraPercent: 40,
-      pfDeduction: employee.pf_deduction,
-      employerContributionRate: Number(pfSettings.employer_contribution_rate),
-      maxPfCap: pfSettings.max_pf_cap ? Number(pfSettings.max_pf_cap) : 1800,
-      employeeEsiRate: Number(pfSettings.esi_employee_contribution_rate) / 100,
-      employerEsiRate: Number(pfSettings.esi_contribution_rate) / 100,
-    });
 
-    const grossSalary = Number(components.gross_salary);
-    const basicSalary = Number(components.basic_salary);
-    const employerPf = Number(components.employer_pf);
-    const employerEsi = Number(components.employer_esi);
+    // ── CALCULATOR-IDENTICAL COMPONENT DERIVATION ──
+    const pfEmployerRate = Number(pfSettings.employer_contribution_rate) / 100;
+    const pfEmployeeRate = Number(pfSettings.employee_contribution_rate) / 100;
+    const esiEmployerRate = Number(pfSettings.esi_contribution_rate) / 100;
+    const esiEmployeeRate = Number(pfSettings.esi_employee_contribution_rate) / 100;
+    const maxPfCap = Number(pfSettings.max_pf_cap) || 1800;
+    const professionalTax = Number(pfSettings.professional_tax ?? 200);
 
-    // Get contribution types for use in calculations
-    const pfContributionType = pfSettings.pf_contribution_type ?? 2; // Default to employee contribution
-    const esiContributionType = pfSettings.esi_contribution_type ?? 2; // Default to employee contribution
+    const basic = Number((monthlyCtc * 0.5).toFixed(2));
+    const hra   = Number((basic * 0.4).toFixed(2));
 
-    // 2. Compute Days in Month
+    const pfApplicable  = isPfApplicableForBasic(basic, employee.pf_deduction !== false);
+    const esiApplicable = isEsiApplicableForBasic(basic);
+
+    const employerPf  = pfApplicable  ? Number(Math.min(basic * pfEmployerRate,  maxPfCap).toFixed(2)) : 0;
+    const employerEsi = esiApplicable ? Number((basic * esiEmployerRate).toFixed(2)) : 0;
+    const employeePf  = pfApplicable  ? Number(Math.min(basic * pfEmployeeRate,  maxPfCap).toFixed(2)) : 0;
+    const employeeEsi = esiApplicable ? Number((basic * esiEmployeeRate).toFixed(2)) : 0;
+
+    // Gross = CTC − employeePf − employerEsi  (mirrors calculator exactly)
+    const gross          = Number((monthlyCtc - employeePf - employerEsi).toFixed(2));
+    const othersAllowance = Math.max(0, Number((gross - basic - hra).toFixed(2)));
+    const appliedPt      = monthlyCtc <= 250000 ? 0 : professionalTax;
+
+    // 2. Non-payable day proration
     const daysInMonth = new Date(year, month, 0).getDate();
-
-    // 3. Fetch Non Payable Days
     const npdRecord = await this.nonPayableDaysService.findByEmployeeMonthAndYear(employeeId, month, year);
-    const manualNonPayableDays = npdRecord ? Number(npdRecord.days) : 0;
-    const nonPayableDays = Math.min(
-      daysInMonth,
-      manualNonPayableDays + employmentProration.joiningNonPayableDays + employmentProration.relievingNonPayableDays,
-    );
+    const manualNpd = npdRecord ? Number(npdRecord.days) : 0;
+    const totalNpd  = Math.min(daysInMonth, manualNpd + employmentProration.joiningNonPayableDays + employmentProration.relievingNonPayableDays);
+    const payableDays = daysInMonth - totalNpd;
+    const prorateRatio = daysInMonth > 0 ? payableDays / daysInMonth : 1;
 
-    // Deductions: Non Payable Deduction
-    const nonPayableDeduction = Number(((grossSalary / daysInMonth) * nonPayableDays).toFixed(2));
-    const nonPayableBasicDeduction = Number(((basicSalary / daysInMonth) * nonPayableDays).toFixed(2));
-    const nonPayableCtcDeduction = Number(((monthlyCtc / daysInMonth) * nonPayableDays).toFixed(2));
-    const payableCtc = Math.max(0, Number((monthlyCtc - nonPayableCtcDeduction).toFixed(2)));
-    const payableGross = Math.max(0, grossSalary - nonPayableDeduction);
-    const payableBasic = Math.max(0, Number((basicSalary - nonPayableBasicDeduction).toFixed(2)));
+    // Prorated values
+    const payableGross  = Number((gross  * prorateRatio).toFixed(2));
+    const payableBasic  = Number((basic  * prorateRatio).toFixed(2));
+    const nonPayableDeduction = Number((gross  - payableGross).toFixed(2));
 
-    // 4. PF Deduction (based on contribution type)
-    let pfDeduction = 0;
-    if (pfContributionType === 2 && isPfApplicableForBasic(basicSalary, employee.pf_deduction !== false)) {
-      const calculatedPf = Number((payableBasic * (Number(pfSettings.employee_contribution_rate) / 100)).toFixed(2));
-      const maxPfCap = pfSettings.max_pf_cap ? Number(pfSettings.max_pf_cap) : 1800.00;
-      pfDeduction = Math.min(maxPfCap, calculatedPf);
-    }
+    // Prorated deductions
+    const pfDeduction         = Number(Math.min(payableBasic * pfEmployeeRate,  maxPfCap * prorateRatio).toFixed(2));
+    const employeeEsiDeduction = esiApplicable ? Number((payableBasic * esiEmployeeRate).toFixed(2)) : 0;
+    const pfDeductionFinal    = pfApplicable ? pfDeduction : 0;
+    const ptDeduction         = appliedPt * prorateRatio > 0 ? Number((appliedPt * prorateRatio).toFixed(2)) : 0;
 
-    // 5. ESI Deduction (based on contribution type)
-    let employeeEsiDeduction = 0;
-    const employeeEsiRate = Number(pfSettings.esi_employee_contribution_rate) / 100;
-    if (esiContributionType === 2 && isEsiApplicableForBasic(basicSalary)) {
-      employeeEsiDeduction = Number((payableBasic * employeeEsiRate).toFixed(2));
-    }
-
-    // Calculate mandatory deductions (only employee contribution type)
-    let mandatoryDeductions = 0; // Will be updated after tax calculation
-
-    // 6. Tax Deduction (Progressive Slabs)
+    // 3. Tax (YTD progressive)
     let taxDeduction = 0;
-    let taxBreakdown = null;
+    let taxBreakdown: any = null;
+
     if (employee.tax_deduction !== false) {
       const financialYear = this.getFinancialYear(month, year);
       const taxRegime = employee.tax_regime || 'new';
       const taxSlabs = await this.taxService.findByFinancialYearAndRegime(financialYear, taxRegime);
 
-      // Fetch YTD gross and tax paid in locked/disbursed records of current financial year
-      const payrollRecords = await this.payrollRepository.find({
-        where: { employee_id: employeeId },
-      });
-
-      const ytdRecords = payrollRecords.filter(p => {
+      const allRecords = await this.payrollRepository.find({ where: { employee_id: employeeId } });
+      const ytdRecords = allRecords.filter(p => {
         if (p.status !== 'locked' && p.status !== 'disbursed') return false;
         if (this.getFinancialYear(p.month, p.year) !== financialYear) return false;
-        if (p.year < year) return true;
-        if (p.year === year && p.month < month) return true;
-        return false;
+        return p.year < year || (p.year === year && p.month < month);
       });
 
-      // Handle any missing historical records in the current financial year by assuming standard gross
       const completedMonthsCount = getCompletedFinancialYearMonthsBefore(month);
-      const dbRecordsCount = ytdRecords.length;
-      const missingMonthsCount = Math.max(0, completedMonthsCount - dbRecordsCount);
-      const missingCtc = missingMonthsCount * monthlyCtc;
-
-      const ctcPaidYTD = ytdRecords.reduce((sum, p) => {
-        const recordBreakdown = p.tax_breakdown_json as any;
-        return sum + Number(recordBreakdown?.payableCtc ?? recordBreakdown?.ctc ?? (Number(p.gross_salary) - Number(p.non_payable_deduction)));
+      const missingCtc = Math.max(0, completedMonthsCount - ytdRecords.length) * monthlyCtc;
+      const grossPaidYTD = ytdRecords.reduce((s, p) => {
+        const bd = p.tax_breakdown_json as any;
+        return s + Number(bd?.payableGross ?? Number(p.gross_salary));
       }, 0) + missingCtc;
-      const taxPaidYTD = ytdRecords.reduce((sum, p) => sum + Number(p.tax_deduction), 0);
+      const taxPaidYTD = ytdRecords.reduce((s, p) => s + Number(p.tax_deduction), 0);
 
       const remainingMonthsExcludingCurrent = getRemainingFinancialYearMonthsExcludingCurrent(month);
       const remainingPayrollMonths = remainingMonthsExcludingCurrent + 1;
+      const projectedAnnualGross = grossPaidYTD + payableGross + (gross * remainingMonthsExcludingCurrent);
 
-      // Projected Annual Income = taxable CTC paid/projected across the financial year.
-      const projectedAnnualIncome = ctcPaidYTD + payableCtc + (monthlyCtc * remainingMonthsExcludingCurrent);
-
-      const breakdown = calculateAnnualTaxWithBreakdown(
-        projectedAnnualIncome,
-        taxRegime,
-        taxSlabs,
-        financialYear
-      );
-
+      const breakdown = calculateAnnualTaxWithBreakdown(projectedAnnualGross, taxRegime, taxSlabs, financialYear);
       const remainingAnnualTax = Math.max(0, breakdown.finalTax - taxPaidYTD);
-
       taxDeduction = Number((remainingAnnualTax / remainingPayrollMonths).toFixed(2));
 
       taxBreakdown = {
-        ctc: monthlyCtc,
-        payableCtc,
-        grossSalary,
-        basicSalary,
-        payableGross,
-        payableBasic,
-        employmentProration: {
-          manualNonPayableDays,
-          joiningNonPayableDays: employmentProration.joiningNonPayableDays,
-          relievingNonPayableDays: employmentProration.relievingNonPayableDays,
-          totalNonPayableDays: nonPayableDays,
-          payableDays: daysInMonth - nonPayableDays,
-          daysInMonth,
-        },
-        employerPf,
-        employerEsi,
-        employeeEsiDeduction,
-        projectedAnnualIncome,
+        // Earnings
+        ctc: monthlyCtc, basic, hra, othersAllowance, gross,
+        // Prorated
+        payableGross, payableBasic, nonPayableDeduction, payableDays, totalNpd, daysInMonth,
+        // Employer side
+        employerPf, employerEsi,
+        // Employee deductions
+        employeePf: pfDeductionFinal, employeeEsi: employeeEsiDeduction, professionalTax: ptDeduction,
+        // Tax
+        grossPaidYTD, taxPaidYTD, projectedAnnualGross,
+        grossIncome: projectedAnnualGross,
         standardDeduction: breakdown.standardDeduction,
         taxableIncome: breakdown.taxableIncome,
-        baseTax: breakdown.baseTax,
-        rebate: breakdown.rebate,
-        surcharge: breakdown.surcharge,
-        cess: breakdown.cess,
-        totalAnnualTaxLiability: breakdown.finalTax,
-        taxPaidYTD: taxPaidYTD,
-        remainingAnnualTax: remainingAnnualTax,
-        remainingPayrollMonths: remainingPayrollMonths,
+        baseTax: breakdown.baseTax, rebate: breakdown.rebate,
+        surcharge: breakdown.surcharge, cess: breakdown.cess,
+        finalTax: breakdown.finalTax,
+        remainingAnnualTax, remainingPayrollMonths,
         monthlyTDS: taxDeduction,
         slabs: breakdown.slabs,
       };
-
-      console.log('--- Tax Calculation Audit ---', {
-        employeeName: employee.name,
-        month,
-        year,
-        ...taxBreakdown
-      });
     }
 
-    // Update mandatory deductions with tax and employee contribution type
-    mandatoryDeductions = taxDeduction;
-    if (pfContributionType === 2) {
-      mandatoryDeductions += pfDeduction;
-    }
-    if (esiContributionType === 2) {
-      mandatoryDeductions += employeeEsiDeduction;
-    }
-
-    // 7. Advance Recovery
+    // 4. Advance recovery
     const activeAdvances = await this.advancesService.findActiveForEmployeeAtDate(employeeId, month, year);
     let advanceRecovery = 0;
     const advanceRecoveriesBreakdown = [];
-    
-    // Check if there is an active advance salary for this upcoming month
+
     const hasAdvanceSalaryThisMonth = activeAdvances.some(adv => {
       if (!adv.is_advance_salary) return false;
-      const issueDate = new Date(adv.date);
-      const issueMonth = issueDate.getMonth() + 1;
-      const issueYear = issueDate.getFullYear();
-      let upcomingMonth = issueMonth + 1;
-      let upcomingYear = issueYear;
-      if (upcomingMonth > 12) {
-        upcomingMonth = 1;
-        upcomingYear += 1;
-      }
-      return month === upcomingMonth && year === upcomingYear;
+      const d = new Date(adv.date);
+      let nm = d.getMonth() + 2; let ny = d.getFullYear();
+      if (nm > 12) { nm = 1; ny++; }
+      return month === nm && year === ny;
     });
 
-    // Available salary left for advances after mandatory government/statutory deductions (only employee contribution type)
-    let availableForAdvances = Math.max(0, Number((payableGross + payableBasic - mandatoryDeductions).toFixed(2)));
+    const totalDeductions = pfDeductionFinal + employeeEsiDeduction + ptDeduction + taxDeduction;
+    let availableForAdvances = Math.max(0, Number((payableGross - totalDeductions).toFixed(2)));
 
-    // Process Advance Salary first if present for this month
     for (const adv of activeAdvances) {
       if (adv.is_advance_salary) {
-        const issueDate = new Date(adv.date);
-        const issueMonth = issueDate.getMonth() + 1;
-        const issueYear = issueDate.getFullYear();
-        let upcomingMonth = issueMonth + 1;
-        let upcomingYear = issueYear;
-        if (upcomingMonth > 12) {
-          upcomingMonth = 1;
-          upcomingYear += 1;
-        }
-        if (month === upcomingMonth && year === upcomingYear) {
-          const recovery = Number(adv.remaining_amount);
-          advanceRecovery += recovery;
-          advanceRecoveriesBreakdown.push({
-            advanceId: adv.id,
-            amount: recovery,
-          });
-          availableForAdvances = Math.max(0, Number((availableForAdvances - recovery).toFixed(2)));
+        const d = new Date(adv.date);
+        let nm = d.getMonth() + 2; let ny = d.getFullYear();
+        if (nm > 12) { nm = 1; ny++; }
+        if (month === nm && year === ny) {
+          const rec = Number(adv.remaining_amount);
+          advanceRecovery += rec;
+          advanceRecoveriesBreakdown.push({ advanceId: adv.id, amount: rec });
+          availableForAdvances = Math.max(0, availableForAdvances - rec);
         }
       }
     }
 
-    // Now process normal advances
     for (const adv of activeAdvances) {
-      // Skip if already processed as advance salary above
       if (adv.is_advance_salary) {
-        const issueDate = new Date(adv.date);
-        const issueMonth = issueDate.getMonth() + 1;
-        const issueYear = issueDate.getFullYear();
-        let upcomingMonth = issueMonth + 1;
-        let upcomingYear = issueYear;
-        if (upcomingMonth > 12) {
-          upcomingMonth = 1;
-          upcomingYear += 1;
-        }
-        if (month === upcomingMonth && year === upcomingYear) {
-          continue;
-        }
+        const d = new Date(adv.date);
+        let nm = d.getMonth() + 2; let ny = d.getFullYear();
+        if (nm > 12) { nm = 1; ny++; }
+        if (month === nm && year === ny) continue;
       }
-
-      if (availableForAdvances <= 0) {
-        break; // Keep remaining deduction pending for further months
-      }
-
-      let recovery = 0;
-      if (adv.recovery_type === 'one_time') {
-        recovery = Number(adv.remaining_amount);
-      } else {
-        const instAmount = adv.installment_amount ? Number(adv.installment_amount) : Number(adv.remaining_amount);
-        recovery = Math.min(instAmount, Number(adv.remaining_amount));
-      }
-      
-      // Cap the recovery at available salary to prevent negative net salary
-      const actualRecovery = Number(Math.min(recovery, availableForAdvances).toFixed(2));
-      
+      if (availableForAdvances <= 0) break;
+      const instAmount = adv.recovery_type === 'one_time' ? Number(adv.remaining_amount) : Math.min(adv.installment_amount ? Number(adv.installment_amount) : Number(adv.remaining_amount), Number(adv.remaining_amount));
+      const actualRecovery = Number(Math.min(instAmount, availableForAdvances).toFixed(2));
       if (actualRecovery > 0) {
         advanceRecovery += actualRecovery;
-        advanceRecoveriesBreakdown.push({
-          advanceId: adv.id,
-          amount: actualRecovery,
-        });
+        advanceRecoveriesBreakdown.push({ advanceId: adv.id, amount: actualRecovery });
         availableForAdvances = Number((availableForAdvances - actualRecovery).toFixed(2));
       }
     }
 
     advanceRecovery = Number(advanceRecovery.toFixed(2));
 
-    // 8. Net Salary (only deduct employee contribution type)
-    let netSalary = Number(Math.max(0, payableGross + payableBasic - mandatoryDeductions - advanceRecovery).toFixed(2));
-    if (hasAdvanceSalaryThisMonth) {
-      netSalary = 0;
-    }
+    // 5. Net = payableGross − (pf + esi + pt + tax) − advance
+    let netSalary = Number(Math.max(0, payableGross - totalDeductions - advanceRecovery).toFixed(2));
+    if (hasAdvanceSalaryThisMonth) netSalary = 0;
 
     return {
       employee,
-      grossSalary,
+      grossSalary: payableGross,          // stored gross_salary = prorated gross
       nonPayableDeduction,
-      pfDeduction,
+      pfDeduction: pfDeductionFinal,
       employeeEsiDeduction,
       taxDeduction,
       advanceRecovery,

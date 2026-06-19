@@ -104,7 +104,15 @@ export class EmployeesController {
     @Body('status') status: 'done' | 'undone',
   ) {
     this.assertPreviewMonth(month);
-    this.assertPreviewRole(req.user.role as Role, [Role.SUPER_ADMIN, Role.HR]);
+    const role = req.user.role as Role;
+    // Finance can only mark undone; HR/Admin can toggle both
+    if (role === Role.FINANCE) {
+      if (status !== 'undone') {
+        throw new ForbiddenException('Finance can only mark preview as undone');
+      }
+    } else {
+      this.assertPreviewRole(role, [Role.SUPER_ADMIN, Role.HR]);
+    }
     if (status !== 'done' && status !== 'undone') {
       throw new ForbiddenException('Status must be done or undone');
     }

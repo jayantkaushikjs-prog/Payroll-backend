@@ -30,6 +30,9 @@ export class HrPreviewReview {
   @Column({ type: 'timestamp', nullable: true })
   hr_marked_undone_at: Date;
 
+  @Column({ type: 'timestamp', nullable: true })
+  finance_remarks_updated_at: Date;
+
   @CreateDateColumn()
   created_at: Date;
 
