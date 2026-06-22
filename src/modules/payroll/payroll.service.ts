@@ -8,7 +8,6 @@ import { NonPayableDaysService } from '../non-payable-days/non-payable-days.serv
 import { PFService } from '../pf/pf.service';
 import { TaxService } from '../tax/tax.service';
 import { AdvancesService } from '../advances/advances.service';
-import { ExpensesService } from '../expenses/expenses.service';
 import { calculateAnnualTaxWithBreakdown } from '../../utils/tax-calculator.util';
 import {
   getCompletedFinancialYearMonthsBefore,
@@ -32,7 +31,6 @@ export class PayrollService {
     private pfService: PFService,
     private taxService: TaxService,
     private advancesService: AdvancesService,
-    private expensesService: ExpensesService,
   ) {}
 
   private getFinancialYear(month: number, year: number): string {
@@ -421,30 +419,58 @@ export class PayrollService {
         await this.payrollRepository.save(pr);
       }
 
-      await this.syncPayrollExpenses(month, year);
     }
 
     return this.getPayrollForMonthAndYear(month, year);
   }
 
-  private async syncPayrollExpenses(month: number, year: number) {
+  /**
+   * Dynamically compute payroll expense summary for a given month/year.
+   * Returns totals for salary, employer PF, and employer ESI across all active payrolls.
+   */
+  async getPayrollExpenseSummary(month: number, year: number): Promise<{
+    totalGrossSalaries: number;
+    totalEmployerPF: number;
+    totalEmployerESI: number;
+    status: 'draft' | 'locked' | 'disbursed' | 'none';
+  }> {
     const payrolls = await this.getPayrollForMonthAndYear(month, year);
-    const disbursedPayrolls = payrolls.filter(pr => pr.status === 'disbursed');
-    if (disbursedPayrolls.length === 0) return;
+    if (payrolls.length === 0) {
+      return { totalGrossSalaries: 0, totalEmployerPF: 0, totalEmployerESI: 0, status: 'none' };
+    }
+
+    // Determine overall status (highest status wins)
+    const statusPriority = { disbursed: 3, locked: 2, draft: 1 };
+    let overallStatus: 'draft' | 'locked' | 'disbursed' = 'draft';
+    for (const pr of payrolls) {
+      if ((statusPriority[pr.status] || 0) > (statusPriority[overallStatus] || 0)) {
+        overallStatus = pr.status;
+      }
+    }
 
     let totalGrossSalaries = 0;
     let totalEmployerPF = 0;
+    let totalEmployerESI = 0;
 
-    for (const pr of disbursedPayrolls) {
+    for (const pr of payrolls) {
       const breakdown = pr.tax_breakdown_json as any;
       totalGrossSalaries += Number(pr.gross_salary) + Number(breakdown?.payableBasic ?? breakdown?.basicSalary ?? 0);
 
       if (pr.employee) {
         try {
           const structure = await this.salaryStructuresService.findActiveByEmployee(pr.employee_id);
+          let monthlyCtc = Number(structure.ctc);
+
+          // Apply appraisal if effective this month
+          if (Number(pr.employee.appraisal) > 0 && pr.employee.appraisal_effective_date) {
+            const effectiveMonthStart = new Date(new Date(pr.employee.appraisal_effective_date).getFullYear(), new Date(pr.employee.appraisal_effective_date).getMonth(), 1);
+            const payrollMonthStart = new Date(year, month - 1, 1);
+            if (payrollMonthStart >= effectiveMonthStart) monthlyCtc += Number(pr.employee.appraisal);
+          }
+
           const pfSettings = await this.pfService.findActiveAtDate(`${year}-${String(month).padStart(2, '0')}-01`);
           const components = calculateSalaryComponentsFromCtc({
-            ctc: Number(structure.ctc),
+            ctc: monthlyCtc,
             basicPercent: 50,
             hraPercent: 40,
             pfDeduction: pr.employee.pf_deduction,
@@ -456,47 +482,19 @@ export class PayrollService {
             ? Math.max(0, (Number(pr.gross_salary) - Number(pr.non_payable_deduction)) / Number(pr.gross_salary))
             : 0;
           totalEmployerPF += Number((components.employer_pf * payableRatio).toFixed(2));
+          totalEmployerESI += Number((components.employer_esi * payableRatio).toFixed(2));
         } catch (error) {
-          console.warn(`Could not calculate employer PF expense for payroll ID ${pr.id}: ${error.message}`);
+          console.warn(`Could not calculate employer expenses for payroll ID ${pr.id}: ${error.message}`);
         }
       }
     }
 
-    totalGrossSalaries = Number(totalGrossSalaries.toFixed(2));
-    totalEmployerPF = Number(totalEmployerPF.toFixed(2));
-
-    const dateStr = `${year}-${String(month).padStart(2, '0')}-28`;
-
-    let salaryExpense = await this.expensesService.getExpensesForMonthAndYear(month, year);
-    let salariesEntry = salaryExpense.find(exp => exp.category === 'salary');
-    if (salariesEntry) {
-      await this.expensesService.update(salariesEntry.id, { amount: totalGrossSalaries });
-    } else {
-      await this.expensesService.create({
-        title: 'Employee Salaries',
-        amount: totalGrossSalaries,
-        category: 'salary',
-        frequency: 'monthly',
-        date: dateStr,
-        startDate: `${year}-${String(month).padStart(2, '0')}-01`,
-        description: `Total monthly employee salaries disbursement for ${month}/${year}`,
-      });
-    }
-
-    let pfEntry = salaryExpense.find(exp => exp.category === 'pf');
-    if (pfEntry) {
-      await this.expensesService.update(pfEntry.id, { amount: totalEmployerPF });
-    } else {
-      await this.expensesService.create({
-        title: 'Employer PF Contribution',
-        amount: totalEmployerPF,
-        category: 'pf',
-        frequency: 'monthly',
-        date: dateStr,
-        startDate: `${year}-${String(month).padStart(2, '0')}-01`,
-        description: `Total monthly employer PF contribution for ${month}/${year}`,
-      });
-    }
+    return {
+      totalGrossSalaries: Number(totalGrossSalaries.toFixed(2)),
+      totalEmployerPF: Number(totalEmployerPF.toFixed(2)),
+      totalEmployerESI: Number(totalEmployerESI.toFixed(2)),
+      status: overallStatus,
+    };
   }
 
   async countTotalPayrollCost(): Promise<number> {
@@ -523,6 +521,7 @@ export class PayrollService {
     pendingPayrollCount: number;
     taxDeductions: number;
     pfContributions: number;
+    esiContributions: number;
     processedCount: number;
   }> {
     const result = await this.payrollRepository.createQueryBuilder('pr')
@@ -534,11 +533,14 @@ export class PayrollService {
       .where('pr.month = :month AND pr.year = :year', { month, year })
       .getRawOne();
 
+    const dynamicExpenses = await this.getPayrollExpenseSummary(month, year);
+
     return {
       payrollTotal: Number(result?.payrollTotal || 0),
       pendingPayrollCount: Number(result?.pendingPayrollCount || 0),
       taxDeductions: Number(result?.taxDeductions || 0),
-      pfContributions: Number(result?.pfContributions || 0),
+      pfContributions: Number(result?.pfContributions || 0) + dynamicExpenses.totalEmployerPF,
+      esiContributions: dynamicExpenses.totalEmployerESI,
       processedCount: Number(result?.processedCount || 0),
     };
   }
@@ -557,15 +559,32 @@ export class PayrollService {
     }));
   }
 
-  async getSumDeductions(): Promise<{ pf: number; tax: number }> {
+  async getSumDeductions(): Promise<{ pf: number; tax: number; esi: number }> {
+    const disbursedMonths = await this.payrollRepository.createQueryBuilder('pr')
+      .select('pr.month', 'month')
+      .addSelect('pr.year', 'year')
+      .where('pr.status = :status', { status: 'disbursed' })
+      .groupBy('pr.year')
+      .addGroupBy('pr.month')
+      .getRawMany();
+
+    let totalEmployerPf = 0;
+    let totalEmployerEsi = 0;
+    for (const { month, year } of disbursedMonths) {
+      const summary = await this.getPayrollExpenseSummary(month, year);
+      totalEmployerPf += summary.totalEmployerPF;
+      totalEmployerEsi += summary.totalEmployerESI;
+    }
+
     const result = await this.payrollRepository.createQueryBuilder('pr')
       .select('SUM(pr.pf_deduction)', 'pf')
       .addSelect('SUM(pr.tax_deduction)', 'tax')
       .where('pr.status = :status', { status: 'disbursed' })
       .getRawOne();
     return {
-      pf: Number(result?.pf || 0),
+      pf: Number(result?.pf || 0) + totalEmployerPf,
       tax: Number(result?.tax || 0),
+      esi: totalEmployerEsi,
     };
   }
 
@@ -577,7 +596,7 @@ export class PayrollService {
       .addSelect('SUM(pr.net_salary)', 'net_cost')
       .addSelect('SUM(pr.pf_deduction)', 'pf_total')
       .addSelect('SUM(pr.tax_deduction)', 'tax_total')
-      .where('pr.status = :status', { status: 'disbursed' })
+      .where('pr.status IN (:...statuses)', { statuses: ['draft', 'locked', 'disbursed'] })
       .groupBy('pr.year')
       .addGroupBy('pr.month')
       .orderBy('pr.year', 'ASC')
@@ -586,11 +605,15 @@ export class PayrollService {
       .getRawMany();
 
     const monthNames = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
-    return results.map(r => ({
-      name: `${monthNames[r.month - 1]} ${r.year}`,
-      payrollCost: Number(r.net_cost),
-      pf: Number(r.pf_total),
-      tax: Number(r.tax_total),
+    return Promise.all(results.map(async r => {
+      const dynamicSummary = await this.getPayrollExpenseSummary(r.month, r.year);
+      return {
+        name: `${monthNames[r.month - 1]} ${r.year}`,
+        payrollCost: Number(r.net_cost),
+        pf: Number(r.pf_total) + dynamicSummary.totalEmployerPF,
+        esi: dynamicSummary.totalEmployerESI,
+        tax: Number(r.tax_total),
+      };
     }));
   }
 

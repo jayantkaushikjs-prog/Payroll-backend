@@ -39,4 +39,10 @@ export class PayrollController {
   removeDrafts(@Query('month') month: string, @Query('year') year: string) {
     return this.payrollService.removeDrafts(+month, +year);
   }
+
+  @Get('expense-summary')
+  @RequirePermissions(Permission.VIEW_PAYROLL)
+  getExpenseSummary(@Query('month') month: string, @Query('year') year: string) {
+    return this.payrollService.getPayrollExpenseSummary(+month, +year);
+  }
 }

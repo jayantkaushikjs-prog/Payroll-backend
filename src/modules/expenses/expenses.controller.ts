@@ -19,7 +19,14 @@ export class ExpensesController {
 
   @Get()
   @RequirePermissions(Permission.VIEW_EXPENSES)
-  findAll(@Query('excludeSalaries') excludeSalaries?: string) {
+  findAll(
+    @Query('month') month?: string,
+    @Query('year') year?: string,
+    @Query('excludeSalaries') excludeSalaries?: string
+  ) {
+    if (month && year && month !== 'all' && year !== 'all') {
+      return this.expensesService.getExpensesForMonthAndYear(+month, +year, excludeSalaries === 'true');
+    }
     return this.expensesService.findAll(excludeSalaries === 'true');
   }
 

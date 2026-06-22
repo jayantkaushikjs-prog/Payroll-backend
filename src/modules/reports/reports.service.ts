@@ -127,14 +127,14 @@ export class ReportsService {
       dashboard.stats.totalAdvancesOutstanding = totalAdvancesOutstanding;
       dashboard.stats.taxDeductions = financeSummary.taxDeductions;
       dashboard.stats.pfContributions = financeSummary.pfContributions;
-      dashboard.stats.esiContributions = 0;
+      dashboard.stats.esiContributions = financeSummary.esiContributions;
       dashboard.stats.totalPayrollThisMonth = financeSummary.payrollTotal;
       dashboard.stats.totalExpensesThisMonth = expensesSummary.total;
       dashboard.summaries.taxPfEsi = {
         tax: deductionTotals.tax,
         pf: deductionTotals.pf,
-        esi: 0,
-        esiConfigured: false,
+        esi: deductionTotals.esi,
+        esiConfigured: true,
       };
       dashboard.summaries.salaryProcessing = {
         nextProcessingDate: new Date(year, month, 0).toISOString().split('T')[0],

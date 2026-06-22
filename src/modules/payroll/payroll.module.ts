@@ -9,7 +9,6 @@ import { NonPayableDaysModule } from '../non-payable-days/non-payable-days.modul
 import { PFModule } from '../pf/pf.module';
 import { TaxModule } from '../tax/tax.module';
 import { AdvancesModule } from '../advances/advances.module';
-import { ExpensesModule } from '../expenses/expenses.module';
 
 @Module({
   imports: [
@@ -20,7 +19,6 @@ import { ExpensesModule } from '../expenses/expenses.module';
     PFModule,
     TaxModule,
     AdvancesModule,
-    ExpensesModule,
   ],
   providers: [PayrollService],
   controllers: [PayrollController],
