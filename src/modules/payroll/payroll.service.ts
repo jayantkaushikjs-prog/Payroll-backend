@@ -146,8 +146,12 @@ export class PayrollService {
     // 2. Non-payable day proration
     const daysInMonth = new Date(year, month, 0).getDate();
     const npdRecord = await this.nonPayableDaysService.findByEmployeeMonthAndYear(employeeId, month, year);
-    const manualNpdInput = daysInMonth - (employee.no_of_days_present ?? daysInMonth);
-    const manualNpd = Math.max(0, manualNpdInput) + (npdRecord ? Number(npdRecord.days) : 0);
+    
+    const consoleAbsentDays = Number(employee.deduction_absent || 0);
+    const explicitNpdDays = npdRecord ? Number(npdRecord.days) : 0;
+    const derivedAbsentDays = Math.max(0, daysInMonth - (employee.no_of_days_present ?? daysInMonth));
+    
+    const manualNpd = consoleAbsentDays + explicitNpdDays + derivedAbsentDays;
     const totalNpd  = Math.min(daysInMonth, manualNpd + employmentProration.joiningNonPayableDays + employmentProration.relievingNonPayableDays);
     const payableDays = daysInMonth - totalNpd;
     const prorateRatio = daysInMonth > 0 ? payableDays / daysInMonth : 1;

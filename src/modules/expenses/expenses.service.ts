@@ -54,17 +54,20 @@ export class ExpensesService {
     const lastDay = new Date(year, month, 0).getDate();
     const endOfMonth = `${year}-${String(month).padStart(2, '0')}-${String(lastDay).padStart(2, '0')}`;
 
-    const where: any = {
-      date: Between(startOfMonth, endOfMonth),
-    };
+    const query = this.expensesRepository.createQueryBuilder('expense')
+      .where(
+        `((expense.frequency = 'one-time' AND expense.date >= :startOfMonth AND expense.date <= :endOfMonth) OR 
+         (expense.frequency = 'monthly' AND 
+          (expense.startDate IS NOT NULL AND expense.startDate <= :endOfMonth OR expense.startDate IS NULL AND expense.date <= :endOfMonth) AND 
+          (expense.endDate IS NULL OR expense.endDate >= :startOfMonth)))`,
+        { startOfMonth, endOfMonth }
+      );
+
     if (excludeSalaries) {
-      where.category = Not(In(['salary', 'pf']));
+      query.andWhere('expense.category NOT IN (:...excluded)', { excluded: ['salary', 'pf'] });
     }
 
-    return this.expensesRepository.find({
-      where,
-      order: { date: 'ASC' },
-    });
+    return query.orderBy('expense.date', 'ASC').getMany();
   }
 
   async getCategorySummary(month: number, year: number, excludeSalaries?: boolean) {
