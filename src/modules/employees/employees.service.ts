@@ -151,17 +151,38 @@ export class EmployeesService {
       }
     }
 
-    const currentMonthlyCtc = Number(employee.monthly_ctc || 0);
-    const nextMonthlyCtc = updateEmployeeDto.monthly_ctc !== undefined ? Number(updateEmployeeDto.monthly_ctc) : currentMonthlyCtc;
-    const shouldSyncSalary =
-      updateEmployeeDto.monthly_ctc !== undefined ||
-      (updateEmployeeDto.pf_deduction !== undefined && nextMonthlyCtc > 0);
+    const { monthly_ctc, appraisal, appraisal_effective_date, ...rest } = updateEmployeeDto;
 
-    Object.assign(employee, updateEmployeeDto);
+    // Determine if this is an appraisal increment
+    let newCtc: number | undefined;
+    let effectiveDate: string | undefined;
+    if (appraisal !== undefined && appraisal_effective_date) {
+      const increment = Number(appraisal);
+      const currentCtc = Number(employee.monthly_ctc || 0);
+      newCtc = currentCtc + increment;
+      effectiveDate = appraisal_effective_date;
+    }
+
+    // Apply regular monthly CTC update if provided and not an appraisal
+    if (monthly_ctc !== undefined) {
+      employee.monthly_ctc = Number(monthly_ctc);
+    }
+
+    Object.assign(employee, rest);
     const saved = await this.employeesRepository.save(employee);
 
-    if (shouldSyncSalary) {
-      await this.syncSalaryStructureFromMonthlyCtc(saved, nextMonthlyCtc);
+    if (newCtc !== undefined) {
+      // Update employee's monthly CTC to reflect appraisal increment
+      saved.monthly_ctc = newCtc;
+      await this.employeesRepository.save(saved);
+      // Sync salary structure with the new CTC and effective date
+      await this.syncSalaryStructureFromMonthlyCtc(saved, newCtc, effectiveDate);
+      // Reset appraisal fields after creating the revision
+      saved.appraisal = 0;
+      saved.appraisal_effective_date = null;
+      await this.employeesRepository.save(saved);
+    } else if (monthly_ctc !== undefined) {
+      await this.syncSalaryStructureFromMonthlyCtc(saved, Number(monthly_ctc));
     }
 
     return saved;
@@ -578,6 +599,31 @@ export class EmployeesService {
 
     const paidMonthsCount = payrolls.length;
 
+    // Compute employer PF and ESI from the active structure for accurate breakdown display
+    let structureEmployerPf = 0;
+    let structureEmployerEsi = 0;
+    if (structure) {
+      // Fetch PF settings if not already fetched (when there were 0 remaining months)
+      const pfSettingsForStructure = await this.pfSettingsRepository.findOne({
+        where: {
+          effective_date: LessThanOrEqual(new Date().toISOString().split('T')[0]),
+        },
+        order: { effective_date: 'DESC' },
+      });
+      const structPfRate = pfSettingsForStructure ? Number(pfSettingsForStructure.employer_contribution_rate) / 100 : 0.12;
+      const structMaxPfCap = pfSettingsForStructure ? Number(pfSettingsForStructure.max_pf_cap) : 1800;
+      const structEsiEmployerRate = pfSettingsForStructure ? Number(pfSettingsForStructure.esi_contribution_rate ?? 3.25) / 100 : 0.0325;
+      const structPfContribType = pfSettingsForStructure ? pfSettingsForStructure.pf_contribution_type : 2;
+      const structEsiContribType = pfSettingsForStructure ? pfSettingsForStructure.esi_contribution_type : 2;
+      const basicSal = Number(structure.basic_salary);
+      if (structPfContribType === 2 && employee.pf_deduction !== false) {
+        structureEmployerPf = Math.min(basicSal * structPfRate, structMaxPfCap);
+      }
+      if (structEsiContribType === 2 && basicSal < 21000) {
+        structureEmployerEsi = basicSal * structEsiEmployerRate;
+      }
+    }
+
     return {
       year: year ? parseInt(year, 10) : startDate.getFullYear(),
       startDate: startDate.toISOString().split('T')[0],
@@ -604,6 +650,8 @@ export class EmployeesService {
         hra: Number(structure.hra),
         special_allowance: Number(structure.special_allowance),
         other_allowance: Number(structure.other_allowance),
+        employer_pf: Number(structureEmployerPf.toFixed(2)),
+        employer_esi: Number(structureEmployerEsi.toFixed(2)),
       } : null,
     };
   }

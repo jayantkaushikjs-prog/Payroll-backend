@@ -108,11 +108,18 @@ export class PayrollService {
 
     let monthlyCtc = Number(structure.ctc);
 
-    // Apply appraisal if effective this month
-    if (Number(employee.appraisal) > 0 && employee.appraisal_effective_date) {
-      const effectiveMonthStart = new Date(new Date(employee.appraisal_effective_date).getFullYear(), new Date(employee.appraisal_effective_date).getMonth(), 1);
-      const payrollMonthStart = new Date(year, month - 1, 1);
-      if (payrollMonthStart >= effectiveMonthStart) monthlyCtc += Number(employee.appraisal);
+    // Apply appraisal if effective this month, or if no effective date is set
+    if (Number(employee.appraisal) > 0) {
+      if (employee.appraisal_effective_date) {
+        const effectiveMonthStart = new Date(new Date(employee.appraisal_effective_date).getFullYear(), new Date(employee.appraisal_effective_date).getMonth(), 1);
+        const payrollMonthStart = new Date(year, month - 1, 1);
+        if (payrollMonthStart >= effectiveMonthStart) {
+          monthlyCtc += Number(employee.appraisal);
+        }
+      } else {
+        // If no effective date is provided, apply the appraisal immediately
+        monthlyCtc += Number(employee.appraisal);
+      }
     }
 
     const pfSettings = await this.pfService.findActiveAtDate(`${year}-${String(month).padStart(2, '0')}-01`);
@@ -175,7 +182,13 @@ export class PayrollService {
 
     // 3. Tax (YTD progressive)
     let taxDeduction = 0;
-    let taxBreakdown: any = null;
+    
+    // Default tax properties in case they are skipped
+    let grossPaidYTD = 0, taxPaidYTD = 0, projectedAnnualGross = 0;
+    let standardDeduction = 0, taxableIncome = 0, baseTax = 0, rebate = 0;
+    let surcharge = 0, cess = 0, finalTax = 0, remainingAnnualTax = 0;
+    let remainingPayrollMonths = 12;
+    let slabs = [];
 
     if (employee.tax_deduction !== false) {
       const financialYear = this.getFinancialYear(month, year);
@@ -191,44 +204,53 @@ export class PayrollService {
 
       const completedMonthsCount = getCompletedFinancialYearMonthsBefore(month);
       const missingCtc = Math.max(0, completedMonthsCount - ytdRecords.length) * monthlyCtc;
-      const grossPaidYTD = ytdRecords.reduce((s, p) => {
+      grossPaidYTD = ytdRecords.reduce((s, p) => {
         const bd = p.tax_breakdown_json as any;
         return s + Number(bd?.payableGross ?? Number(p.gross_salary));
       }, 0) + missingCtc;
-      const taxPaidYTD = ytdRecords.reduce((s, p) => s + Number(p.tax_deduction), 0);
+      taxPaidYTD = ytdRecords.reduce((s, p) => s + Number(p.tax_deduction), 0);
 
       const remainingMonthsExcludingCurrent = getRemainingFinancialYearMonthsExcludingCurrent(month);
-      const remainingPayrollMonths = remainingMonthsExcludingCurrent + 1;
-      const projectedAnnualGross = grossPaidYTD + payableGross + bonusIncentives + leaveEncashment + (gross * remainingMonthsExcludingCurrent);
+      remainingPayrollMonths = remainingMonthsExcludingCurrent + 1;
+      projectedAnnualGross = grossPaidYTD + payableGross + bonusIncentives + leaveEncashment + (gross * remainingMonthsExcludingCurrent);
 
       const breakdown = calculateAnnualTaxWithBreakdown(projectedAnnualGross, taxRegime, taxSlabs, financialYear);
-      const remainingAnnualTax = Math.max(0, breakdown.finalTax - taxPaidYTD);
+      remainingAnnualTax = Math.max(0, breakdown.finalTax - taxPaidYTD);
       taxDeduction = Number((remainingAnnualTax / remainingPayrollMonths).toFixed(2));
-
-      taxBreakdown = {
-        // Earnings
-        ctc: monthlyCtc, basic, hra, othersAllowance, gross,
-        bonus: bonusIncentives, leaveEncashment,
-        // Prorated
-        payableGross, payableBasic, nonPayableDeduction, payableDays, totalNpd, daysInMonth,
-        // Employer side
-        employerPf, employerEsi,
-        // Employee deductions
-        employeePf: pfDeductionFinal, employeeEsi: employeeEsiDeduction, professionalTax: ptDeduction,
-        lateArrivalDeduction: lateArrivalDeductionAmount, damages: damagesRecovery, otherDeductions: otherDeductionsAmount,
-        // Tax
-        grossPaidYTD, taxPaidYTD, projectedAnnualGross,
-        grossIncome: projectedAnnualGross,
-        standardDeduction: breakdown.standardDeduction,
-        taxableIncome: breakdown.taxableIncome,
-        baseTax: breakdown.baseTax, rebate: breakdown.rebate,
-        surcharge: breakdown.surcharge, cess: breakdown.cess,
-        finalTax: breakdown.finalTax,
-        remainingAnnualTax, remainingPayrollMonths,
-        monthlyTDS: taxDeduction,
-        slabs: breakdown.slabs,
-      };
+      
+      standardDeduction = breakdown.standardDeduction;
+      taxableIncome = breakdown.taxableIncome;
+      baseTax = breakdown.baseTax;
+      rebate = breakdown.rebate;
+      surcharge = breakdown.surcharge;
+      cess = breakdown.cess;
+      finalTax = breakdown.finalTax;
+      slabs = breakdown.slabs;
     }
+
+    const taxBreakdown = {
+      // Earnings
+      ctc: monthlyCtc, basic, hra, othersAllowance, gross,
+      bonus: bonusIncentives, leaveEncashment,
+      // Prorated
+      payableGross, payableBasic, nonPayableDeduction, payableDays, totalNpd, daysInMonth,
+      // Employer side
+      employerPf, employerEsi,
+      // Employee deductions
+      employeePf: pfDeductionFinal, employeeEsi: employeeEsiDeduction, professionalTax: ptDeduction,
+      lateArrivalDeduction: lateArrivalDeductionAmount, damages: damagesRecovery, otherDeductions: otherDeductionsAmount,
+      // Tax
+      grossPaidYTD, taxPaidYTD, projectedAnnualGross,
+      grossIncome: projectedAnnualGross,
+      standardDeduction,
+      taxableIncome,
+      baseTax, rebate,
+      surcharge, cess,
+      finalTax,
+      remainingAnnualTax, remainingPayrollMonths,
+      monthlyTDS: taxDeduction,
+      slabs,
+    };
 
     // 4. Advance recovery
     const activeAdvances = await this.advancesService.findActiveForEmployeeAtDate(employeeId, month, year);

@@ -124,7 +124,7 @@ export class AppModule implements OnApplicationBootstrap {
   }
 
   private async seedUsers() {
-    const adminUser = await this.userRepo.findOne({ where: { email: 'admin@payroll.com' } });
+    const adminUser = await this.userRepo.findOne({ where: { email: 'admin@techindustan.com' } });
     if (adminUser) {
       console.log('Admin user already exists.');
       return;
@@ -133,7 +133,7 @@ export class AppModule implements OnApplicationBootstrap {
     console.log('Seeding admin user...');
     const hashedPassword = await bcrypt.hash('Admin@123', 10);
     const user = this.userRepo.create({
-      email: 'admin@payroll.com',
+      email: 'admin@techindustan.com',
       password: hashedPassword,
       role: Role.SUPER_ADMIN,
     });
