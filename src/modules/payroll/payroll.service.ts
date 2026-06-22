@@ -120,10 +120,10 @@ export class PayrollService {
     const pfSettings = await this.pfService.findActiveAtDate(`${year}-${String(month).padStart(2, '0')}-01`);
 
     // ── CALCULATOR-IDENTICAL COMPONENT DERIVATION ──
-    const pfEmployerRate = Number(pfSettings.employer_contribution_rate) / 100;
-    const pfEmployeeRate = Number(pfSettings.employee_contribution_rate) / 100;
-    const esiEmployerRate = Number(pfSettings.esi_contribution_rate) / 100;
-    const esiEmployeeRate = Number(pfSettings.esi_employee_contribution_rate) / 100;
+    const pfEmployerRate = (Number(pfSettings?.employer_contribution_rate) || 12) / 100;
+    const pfEmployeeRate = (Number(pfSettings?.employee_contribution_rate) || 12) / 100;
+    const esiEmployerRate = (Number(pfSettings?.esi_contribution_rate) || 3.25) / 100;
+    const esiEmployeeRate = (Number(pfSettings?.esi_employee_contribution_rate) || 0.75) / 100;
     const maxPfCap = Number(pfSettings.max_pf_cap) || 1800;
     const professionalTax = Number(pfSettings.professional_tax ?? 200);
 
@@ -138,15 +138,16 @@ export class PayrollService {
     const employeePf  = pfApplicable  ? Number(Math.min(basic * pfEmployeeRate,  maxPfCap).toFixed(2)) : 0;
     const employeeEsi = esiApplicable ? Number((basic * esiEmployeeRate).toFixed(2)) : 0;
 
-    // Gross = CTC − employeePf − employerEsi  (mirrors calculator exactly)
-    const gross          = Number((monthlyCtc - employeePf - employerEsi).toFixed(2));
+    // Gross = CTC − employerPf − employerEsi
+    const gross          = Number((monthlyCtc - employerPf - employerEsi).toFixed(2));
     const othersAllowance = Math.max(0, Number((gross - basic - hra).toFixed(2)));
     const appliedPt      = monthlyCtc <= 250000 ? 0 : professionalTax;
 
     // 2. Non-payable day proration
     const daysInMonth = new Date(year, month, 0).getDate();
     const npdRecord = await this.nonPayableDaysService.findByEmployeeMonthAndYear(employeeId, month, year);
-    const manualNpd = npdRecord ? Number(npdRecord.days) : 0;
+    const manualNpdInput = daysInMonth - (employee.no_of_days_present ?? daysInMonth);
+    const manualNpd = Math.max(0, manualNpdInput) + (npdRecord ? Number(npdRecord.days) : 0);
     const totalNpd  = Math.min(daysInMonth, manualNpd + employmentProration.joiningNonPayableDays + employmentProration.relievingNonPayableDays);
     const payableDays = daysInMonth - totalNpd;
     const prorateRatio = daysInMonth > 0 ? payableDays / daysInMonth : 1;
@@ -161,6 +162,14 @@ export class PayrollService {
     const employeeEsiDeduction = esiApplicable ? Number((payableBasic * esiEmployeeRate).toFixed(2)) : 0;
     const pfDeductionFinal    = pfApplicable ? pfDeduction : 0;
     const ptDeduction         = appliedPt * prorateRatio > 0 ? Number((appliedPt * prorateRatio).toFixed(2)) : 0;
+
+    // Additional Components
+    const lateAbsentDays = Math.floor(Number(employee.late_arrival_deduction || 0) / 3) * 0.5;
+    const lateArrivalDeductionAmount = Number(((gross / daysInMonth) * lateAbsentDays).toFixed(2));
+    const bonusIncentives = Number(employee.bonus_incentives || 0);
+    const leaveEncashment = Number(employee.leave_encashment || 0);
+    const damagesRecovery = Number(employee.damages_recovery || 0);
+    const otherDeductionsAmount = Number(employee.other_deductions || 0);
 
     // 3. Tax (YTD progressive)
     let taxDeduction = 0;
@@ -188,7 +197,7 @@ export class PayrollService {
 
       const remainingMonthsExcludingCurrent = getRemainingFinancialYearMonthsExcludingCurrent(month);
       const remainingPayrollMonths = remainingMonthsExcludingCurrent + 1;
-      const projectedAnnualGross = grossPaidYTD + payableGross + (gross * remainingMonthsExcludingCurrent);
+      const projectedAnnualGross = grossPaidYTD + payableGross + bonusIncentives + leaveEncashment + (gross * remainingMonthsExcludingCurrent);
 
       const breakdown = calculateAnnualTaxWithBreakdown(projectedAnnualGross, taxRegime, taxSlabs, financialYear);
       const remainingAnnualTax = Math.max(0, breakdown.finalTax - taxPaidYTD);
@@ -197,12 +206,14 @@ export class PayrollService {
       taxBreakdown = {
         // Earnings
         ctc: monthlyCtc, basic, hra, othersAllowance, gross,
+        bonus: bonusIncentives, leaveEncashment,
         // Prorated
         payableGross, payableBasic, nonPayableDeduction, payableDays, totalNpd, daysInMonth,
         // Employer side
         employerPf, employerEsi,
         // Employee deductions
         employeePf: pfDeductionFinal, employeeEsi: employeeEsiDeduction, professionalTax: ptDeduction,
+        lateArrivalDeduction: lateArrivalDeductionAmount, damages: damagesRecovery, otherDeductions: otherDeductionsAmount,
         // Tax
         grossPaidYTD, taxPaidYTD, projectedAnnualGross,
         grossIncome: projectedAnnualGross,
@@ -230,8 +241,9 @@ export class PayrollService {
       return month === nm && year === ny;
     });
 
-    const totalDeductions = pfDeductionFinal + employeeEsiDeduction + ptDeduction + taxDeduction;
-    let availableForAdvances = Math.max(0, Number((payableGross - totalDeductions).toFixed(2)));
+    const totalDeductions = pfDeductionFinal + employeeEsiDeduction + ptDeduction + taxDeduction + lateArrivalDeductionAmount + damagesRecovery + otherDeductionsAmount;
+    const totalEarnings = Number((payableGross + bonusIncentives + leaveEncashment).toFixed(2));
+    let availableForAdvances = Math.max(0, Number((totalEarnings - totalDeductions).toFixed(2)));
 
     for (const adv of activeAdvances) {
       if (adv.is_advance_salary) {
@@ -266,8 +278,8 @@ export class PayrollService {
 
     advanceRecovery = Number(advanceRecovery.toFixed(2));
 
-    // 5. Net = payableGross − (pf + esi + pt + tax) − advance
-    let netSalary = Number(Math.max(0, payableGross - totalDeductions - advanceRecovery).toFixed(2));
+    // 5. Net = totalEarnings − totalDeductions − advance
+    let netSalary = Number(Math.max(0, totalEarnings - totalDeductions - advanceRecovery).toFixed(2));
     if (hasAdvanceSalaryThisMonth) netSalary = 0;
 
     return {
