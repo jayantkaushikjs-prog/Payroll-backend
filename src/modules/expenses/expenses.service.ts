@@ -35,11 +35,11 @@ export class ExpensesService {
       const startDate = `${year}-${String(month).padStart(2, '0')}-01`;
       const pseudoExpenses: Partial<Expense>[] = [];
 
-      if (summary.totalGrossSalaries > 0) {
+      if (summary.totalNetSalaries > 0) {
         pseudoExpenses.push({
           id: -1,
           title: `Employee Salaries (${statusLabel})`,
-          amount: summary.totalGrossSalaries,
+          amount: summary.totalNetSalaries,
           category: 'salary',
           frequency: 'monthly',
           date: dateStr,

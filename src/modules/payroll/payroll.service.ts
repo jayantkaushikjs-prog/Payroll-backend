@@ -455,7 +455,7 @@ export class PayrollService {
    * Returns totals for salary, employer PF, and employer ESI across all active payrolls.
    */
   async getPayrollExpenseSummary(month: number, year: number): Promise<{
-    totalGrossSalaries: number;
+    totalNetSalaries: number;
     totalEmployerPF: number;
     totalEmployerESI: number;
     totalEmployeeESI: number;
@@ -463,7 +463,7 @@ export class PayrollService {
   }> {
     const payrolls = await this.getPayrollForMonthAndYear(month, year);
     if (payrolls.length === 0) {
-      return { totalGrossSalaries: 0, totalEmployerPF: 0, totalEmployerESI: 0, totalEmployeeESI: 0, status: 'none' };
+      return { totalNetSalaries: 0, totalEmployerPF: 0, totalEmployerESI: 0, totalEmployeeESI: 0, status: 'none' };
     }
 
     // Determine overall status (highest status wins)
@@ -475,21 +475,21 @@ export class PayrollService {
       }
     }
 
-    let totalGrossSalaries = 0;
+    let totalNetSalaries = 0;
     let totalEmployerPF = 0;
     let totalEmployerESI = 0;
     let totalEmployeeESI = 0;
 
     for (const pr of payrolls) {
       const breakdown = pr.tax_breakdown_json as any;
-      totalGrossSalaries += Number(pr.gross_salary);
+      totalNetSalaries += Number(pr.net_salary);
       totalEmployeeESI += Number(breakdown?.employeeEsi ?? 0);
       totalEmployerPF += Number(breakdown?.employerPf ?? 0);
       totalEmployerESI += Number(breakdown?.employerEsi ?? 0);
     }
 
     return {
-      totalGrossSalaries: Number(totalGrossSalaries.toFixed(2)),
+      totalNetSalaries: Number(totalNetSalaries.toFixed(2)),
       totalEmployerPF: Number(totalEmployerPF.toFixed(2)),
       totalEmployerESI: Number(totalEmployerESI.toFixed(2)),
       totalEmployeeESI: Number(totalEmployeeESI.toFixed(2)),
@@ -518,10 +518,13 @@ export class PayrollService {
 
   async getCurrentMonthFinanceSummary(month: number, year: number): Promise<{
     payrollTotal: number;
+    totalPayrollCost: number;
     pendingPayrollCount: number;
     taxDeductions: number;
-    pfContributions: number;
-    esiContributions: number;
+    employeePf: number;
+    employerPf: number;
+    employeeEsi: number;
+    employerEsi: number;
     processedCount: number;
   }> {
     const result = await this.payrollRepository.createQueryBuilder('pr')
@@ -537,10 +540,13 @@ export class PayrollService {
 
     return {
       payrollTotal: Number(result?.payrollTotal || 0),
+      totalPayrollCost: dynamicExpenses.totalNetSalaries + dynamicExpenses.totalEmployerPF + dynamicExpenses.totalEmployerESI,
       pendingPayrollCount: Number(result?.pendingPayrollCount || 0),
       taxDeductions: Number(result?.taxDeductions || 0),
-      pfContributions: Number(result?.pfContributions || 0) + dynamicExpenses.totalEmployerPF,
-      esiContributions: dynamicExpenses.totalEmployerESI + dynamicExpenses.totalEmployeeESI,
+      employeePf: Number(result?.pfContributions || 0),
+      employerPf: dynamicExpenses.totalEmployerPF,
+      employeeEsi: dynamicExpenses.totalEmployeeESI,
+      employerEsi: dynamicExpenses.totalEmployerESI,
       processedCount: Number(result?.processedCount || 0),
     };
   }

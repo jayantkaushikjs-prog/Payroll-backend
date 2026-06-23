@@ -126,9 +126,14 @@ export class ReportsService {
       dashboard.stats.pendingPayrollProcessing = financeSummary.pendingPayrollCount;
       dashboard.stats.totalAdvancesOutstanding = totalAdvancesOutstanding;
       dashboard.stats.taxDeductions = financeSummary.taxDeductions;
-      dashboard.stats.pfContributions = financeSummary.pfContributions;
-      dashboard.stats.esiContributions = financeSummary.esiContributions;
+      dashboard.stats.employeePf = financeSummary.employeePf;
+      dashboard.stats.employerPf = financeSummary.employerPf;
+      dashboard.stats.employeeEsi = financeSummary.employeeEsi;
+      dashboard.stats.employerEsi = financeSummary.employerEsi;
+      dashboard.stats.pfContributions = financeSummary.employeePf + financeSummary.employerPf;
+      dashboard.stats.esiContributions = financeSummary.employeeEsi + financeSummary.employerEsi;
       dashboard.stats.totalPayrollThisMonth = financeSummary.payrollTotal;
+      dashboard.stats.totalPayrollCost = financeSummary.totalPayrollCost;
       dashboard.stats.totalExpensesThisMonth = expensesSummary.total;
       dashboard.summaries.taxPfEsi = {
         tax: deductionTotals.tax,

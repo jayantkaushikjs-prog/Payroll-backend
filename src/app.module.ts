@@ -14,6 +14,7 @@ import { NonPayableDays } from './modules/non-payable-days/non-payable-days.enti
 import { PFSettings } from './modules/pf/pf-settings.entity';
 import { TaxSlab } from './modules/tax/tax-slab.entity';
 import { EmployeeAdvance } from './modules/advances/employee-advance.entity';
+import { AdvanceLog } from './modules/advances/advance-log.entity';
 import { Payroll } from './modules/payroll/payroll.entity';
 import { Expense } from './modules/expenses/expense.entity';
 import { ExpenseCategory } from './modules/expenses/expense-category.entity';
@@ -63,6 +64,7 @@ import {
         PFSettings,
         TaxSlab,
         EmployeeAdvance,
+        AdvanceLog,
         Payroll,
         Expense,
         ExpenseCategory,
@@ -82,6 +84,7 @@ import {
       PFSettings,
       TaxSlab,
       EmployeeAdvance,
+      AdvanceLog,
       Payroll,
       Expense,
       ExpenseCategory,

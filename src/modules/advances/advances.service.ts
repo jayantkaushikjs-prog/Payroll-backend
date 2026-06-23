@@ -2,7 +2,10 @@ import { Injectable, NotFoundException, BadRequestException } from '@nestjs/comm
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
 import { EmployeeAdvance } from './employee-advance.entity';
+import { AdvanceLog } from './advance-log.entity';
 import { CreateAdvanceDto } from './dto/create-advance.dto';
+import { CreateAdvanceLogDto } from './dto/create-advance-log.dto';
+import { UpdateAdvanceLogDto } from './dto/update-advance-log.dto';
 import { EmployeesService } from '../employees/employees.service';
 
 @Injectable()
@@ -10,6 +13,8 @@ export class AdvancesService {
   constructor(
     @InjectRepository(EmployeeAdvance)
     private advancesRepository: Repository<EmployeeAdvance>,
+    @InjectRepository(AdvanceLog)
+    private advanceLogsRepository: Repository<AdvanceLog>,
     private employeesService: EmployeesService,
   ) {}
 
@@ -145,5 +150,65 @@ export class AdvancesService {
 
   async remove(id: number): Promise<void> {
     await this.advancesRepository.delete(id);
+  }
+
+  // ─── Advance Logs (Manual Borrow/Return tracking) ───────────────────────────
+
+  async createLog(dto: CreateAdvanceLogDto): Promise<AdvanceLog> {
+    await this.employeesService.findOne(dto.employee_id);
+    const log = this.advanceLogsRepository.create({
+      ...dto,
+      status: dto.status || 'open',
+      amount_returned: dto.amount_returned || 0,
+    });
+    return this.advanceLogsRepository.save(log);
+  }
+
+  async findAllLogs(): Promise<AdvanceLog[]> {
+    return this.advanceLogsRepository.find({
+      relations: ['employee'],
+      order: { borrowed_date: 'DESC', id: 'DESC' },
+    });
+  }
+
+  async findLogsByEmployee(employeeId: number): Promise<AdvanceLog[]> {
+    return this.advanceLogsRepository.find({
+      where: { employee_id: employeeId },
+      order: { borrowed_date: 'DESC' },
+    });
+  }
+
+  async updateLog(id: number, dto: UpdateAdvanceLogDto): Promise<AdvanceLog> {
+    const log = await this.advanceLogsRepository.findOne({ where: { id } });
+    if (!log) throw new NotFoundException(`Advance log ID ${id} not found`);
+
+    if (dto.employee_id !== undefined) {
+      await this.employeesService.findOne(dto.employee_id);
+      log.employee_id = dto.employee_id;
+    }
+    if (dto.amount !== undefined) log.amount = dto.amount;
+    if (dto.borrowed_date !== undefined) log.borrowed_date = dto.borrowed_date;
+    if (dto.tentative_return_date !== undefined) log.tentative_return_date = dto.tentative_return_date || null;
+    if (dto.actual_return_date !== undefined) log.actual_return_date = dto.actual_return_date || null;
+    if (dto.notes !== undefined) log.notes = dto.notes || null;
+    if (dto.status !== undefined) log.status = dto.status;
+    if (dto.amount_returned !== undefined) log.amount_returned = dto.amount_returned;
+
+    // Auto-derive status from amount_returned if not explicitly set
+    if (dto.amount_returned !== undefined && dto.status === undefined) {
+      const returned = Number(dto.amount_returned);
+      const total = Number(log.amount);
+      if (returned <= 0) log.status = 'open';
+      else if (returned >= total) log.status = 'returned';
+      else log.status = 'partially_returned';
+    }
+
+    return this.advanceLogsRepository.save(log);
+  }
+
+  async removeLog(id: number): Promise<void> {
+    const log = await this.advanceLogsRepository.findOne({ where: { id } });
+    if (!log) throw new NotFoundException(`Advance log ID ${id} not found`);
+    await this.advanceLogsRepository.delete(id);
   }
 }

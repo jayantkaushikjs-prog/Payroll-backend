@@ -471,11 +471,15 @@ export class EmployeesService {
 
     if (startDateStr && endDateStr) {
       startDate = new Date(startDateStr);
+      startDate.setHours(0, 0, 0, 0);
       endDate = new Date(endDateStr);
+      endDate.setHours(0, 0, 0, 0);
     } else {
       const yr = year ? parseInt(year, 10) : new Date().getFullYear();
       startDate = new Date(yr, 3, 1); // April 1st of year
+      startDate.setHours(0, 0, 0, 0);
       endDate = new Date(yr + 1, 2, 31); // March 31st of year + 1
+      endDate.setHours(0, 0, 0, 0);
     }
 
     // Generate all target months within the range
@@ -499,14 +503,42 @@ export class EmployeesService {
       targetMonths.some(tm => tm.year === p.year && tm.month === p.month)
     );
 
-    const amountPaid = payrolls.reduce((sum, p) => sum + Number(p.net_salary), 0);
-    const pfDeducted = payrolls.reduce((sum, p) => sum + Number(p.pf_deduction), 0);
-    const taxDeducted = payrolls.reduce((sum, p) => sum + Number(p.tax_deduction), 0);
-    const advanceRecovered = payrolls.reduce((sum, p) => sum + Number(p.advance_recovery), 0);
-    const esiDeducted = payrolls.reduce((sum, p) => {
+    const getProrationRatio = (year: number, month: number): number => {
+      const monthStart = new Date(year, month - 1, 1);
+      monthStart.setHours(0, 0, 0, 0);
+      const monthEnd = new Date(year, month, 0);
+      monthEnd.setHours(0, 0, 0, 0);
+
+      const overlapStart = startDate > monthStart ? startDate : monthStart;
+      const overlapEnd = endDate < monthEnd ? endDate : monthEnd;
+
+      if (overlapStart > overlapEnd) return 0;
+
+      const overlapDays = Math.round((overlapEnd.getTime() - overlapStart.getTime()) / (1000 * 60 * 60 * 24)) + 1;
+      const totalDays = monthEnd.getDate();
+
+      return overlapDays / totalDays;
+    };
+
+    let amountPaid = 0;
+    let pfDeducted = 0;
+    let taxDeducted = 0;
+    let advanceRecovered = 0;
+    let esiDeducted = 0;
+    let paidMonthsCount = 0;
+
+    payrolls.forEach(p => {
+      const ratio = getProrationRatio(p.year, p.month);
+      amountPaid += Number(p.net_salary) * ratio;
+      pfDeducted += Number(p.pf_deduction) * ratio;
+      taxDeducted += Number(p.tax_deduction) * ratio;
+      advanceRecovered += Number(p.advance_recovery) * ratio;
+      
       const breakdown = p.tax_breakdown_json as any;
-      return sum + Number(breakdown?.employeeEsiDeduction || 0);
-    }, 0);
+      esiDeducted += Number(breakdown?.employeeEsiDeduction || 0) * ratio;
+      
+      paidMonthsCount += ratio;
+    });
 
     // Get salary structure to calculate remaining/to-be-paid months
     const structure = await this.salaryStructureRepository.findOne({
@@ -526,7 +558,7 @@ export class EmployeesService {
       const remainingMonths = targetMonths.filter(tm =>
         !payrolls.some(p => p.year === tm.year && p.month === tm.month)
       );
-      remainingMonthsCount = remainingMonths.length;
+      const remainingFullMonths = remainingMonths.length;
 
       // Fetch dynamic PFSettings based on current date
       const pfSettings = await this.pfSettingsRepository.findOne({
@@ -558,7 +590,7 @@ export class EmployeesService {
 
       // 3. Calculate remaining annual tax and distribute to remaining months
       const remainingAnnualTax = Math.max(0, totalAnnualTax - taxDeducted);
-      const monthlyTdsRemaining = remainingMonthsCount > 0 ? Number((remainingAnnualTax / remainingMonthsCount).toFixed(2)) : 0;
+      const monthlyTdsRemaining = remainingFullMonths > 0 ? Number((remainingAnnualTax / remainingFullMonths).toFixed(2)) : 0;
 
       for (const m of remainingMonths) {
         // Expected PF (based on contribution type)
@@ -578,10 +610,13 @@ export class EmployeesService {
         const tax = employee.tax_deduction !== false ? monthlyTdsRemaining : 0;
 
         const net = monthlyGross - pf - esi - tax;
-        amountToBePaid += net;
-        expectedPFRemaining += pf;
-        expectedESIRemaining += esi;
-        expectedTaxRemaining += tax;
+        
+        const ratio = getProrationRatio(m.year, m.month);
+        amountToBePaid += net * ratio;
+        expectedPFRemaining += pf * ratio;
+        expectedESIRemaining += esi * ratio;
+        expectedTaxRemaining += tax * ratio;
+        remainingMonthsCount += ratio;
       }
     }
 
@@ -610,7 +645,6 @@ export class EmployeesService {
         is_advance_salary: advance.is_advance_salary,
       }));
 
-    const paidMonthsCount = payrolls.length;
 
     // Compute employer PF and ESI from the active structure for accurate breakdown display
     let structureEmployerPf = 0;
