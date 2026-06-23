@@ -101,4 +101,7 @@ export class Employee {
 
   @UpdateDateColumn()
   updated_at: Date;
+
+  @Column({ type: 'timestamptz', nullable: true, default: null })
+  deleted_at: Date | null;
 }

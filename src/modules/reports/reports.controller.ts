@@ -130,4 +130,18 @@ export class ReportsController {
     res.setHeader('Content-Disposition', `attachment; filename=${this.reportsService.filename('joining-exit-records')}`);
     return res.status(200).send(csvContent);
   }
+
+  @Get('preview-sheet/csv')
+  @RequirePermissions(Permission.VIEW_HR_REPORTS)
+  async downloadPreviewSheetCsv(
+    @Query('month') month: string,
+    @Query('year') year: string,
+    @Req() req: Request,
+    @Res() res: Response,
+  ) {
+    const csvContent = await this.reportsService.generatePreviewSheetCsv(+month, +year, this.getRole(req));
+    res.setHeader('Content-Type', 'text/csv');
+    res.setHeader('Content-Disposition', `attachment; filename=${this.reportsService.filename('preview-sheet')}`);
+    return res.status(200).send(csvContent);
+  }
 }

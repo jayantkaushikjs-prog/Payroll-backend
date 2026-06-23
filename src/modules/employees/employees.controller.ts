@@ -186,11 +186,6 @@ export class EmployeesController {
     return this.employeesService.update(+id, updateEmployeeDto);
   }
 
-  @Delete(':id')
-  @RequirePermissions(Permission.DELETE_EMPLOYEE)
-  remove(@Param('id') id: string) {
-    return this.employeesService.remove(+id);
-  }
 
   @Delete('departments/:id')
   @RequirePermissions(Permission.CREATE_EMPLOYEE)

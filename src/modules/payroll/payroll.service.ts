@@ -171,6 +171,10 @@ export class PayrollService {
     const employeeEsiDeduction = esiApplicable ? Number((payableBasic * esiEmployeeRate).toFixed(2)) : 0;
     const pfDeductionFinal    = pfApplicable ? pfDeduction : 0;
     const ptDeduction         = appliedPt * prorateRatio > 0 ? Number((appliedPt * prorateRatio).toFixed(2)) : 0;
+    
+    // Prorated Employer contributions
+    const employerPfFinal     = pfApplicable ? Number(Math.min(payableBasic * pfEmployerRate, maxPfCap * prorateRatio).toFixed(2)) : 0;
+    const employerEsiFinal    = esiApplicable ? Number((payableBasic * esiEmployerRate).toFixed(2)) : 0;
 
     // Additional Components
     const lateAbsentDays = Math.floor(Number(employee.late_arrival_deduction || 0) / 3) * 0.5;
@@ -235,7 +239,7 @@ export class PayrollService {
       // Prorated
       payableGross, payableBasic, nonPayableDeduction, payableDays, totalNpd, daysInMonth,
       // Employer side
-      employerPf, employerEsi,
+      employerPf: employerPfFinal, employerEsi: employerEsiFinal,
       // Employee deductions
       employeePf: pfDeductionFinal, employeeEsi: employeeEsiDeduction, professionalTax: ptDeduction,
       lateArrivalDeduction: lateArrivalDeductionAmount, damages: damagesRecovery, otherDeductions: otherDeductionsAmount,
@@ -454,11 +458,12 @@ export class PayrollService {
     totalGrossSalaries: number;
     totalEmployerPF: number;
     totalEmployerESI: number;
+    totalEmployeeESI: number;
     status: 'draft' | 'locked' | 'disbursed' | 'none';
   }> {
     const payrolls = await this.getPayrollForMonthAndYear(month, year);
     if (payrolls.length === 0) {
-      return { totalGrossSalaries: 0, totalEmployerPF: 0, totalEmployerESI: 0, status: 'none' };
+      return { totalGrossSalaries: 0, totalEmployerPF: 0, totalEmployerESI: 0, totalEmployeeESI: 0, status: 'none' };
     }
 
     // Determine overall status (highest status wins)
@@ -473,48 +478,21 @@ export class PayrollService {
     let totalGrossSalaries = 0;
     let totalEmployerPF = 0;
     let totalEmployerESI = 0;
+    let totalEmployeeESI = 0;
 
     for (const pr of payrolls) {
       const breakdown = pr.tax_breakdown_json as any;
-      totalGrossSalaries += Number(pr.gross_salary) + Number(breakdown?.payableBasic ?? breakdown?.basicSalary ?? 0);
-
-      if (pr.employee) {
-        try {
-          const structure = await this.salaryStructuresService.findActiveByEmployee(pr.employee_id);
-          let monthlyCtc = Number(structure.ctc);
-
-          // Apply appraisal if effective this month
-          if (Number(pr.employee.appraisal) > 0 && pr.employee.appraisal_effective_date) {
-            const effectiveMonthStart = new Date(new Date(pr.employee.appraisal_effective_date).getFullYear(), new Date(pr.employee.appraisal_effective_date).getMonth(), 1);
-            const payrollMonthStart = new Date(year, month - 1, 1);
-            if (payrollMonthStart >= effectiveMonthStart) monthlyCtc += Number(pr.employee.appraisal);
-          }
-
-          const pfSettings = await this.pfService.findActiveAtDate(`${year}-${String(month).padStart(2, '0')}-01`);
-          const components = calculateSalaryComponentsFromCtc({
-            ctc: monthlyCtc,
-            basicPercent: 50,
-            hraPercent: 40,
-            pfDeduction: pr.employee.pf_deduction,
-            employerContributionRate: Number(pfSettings.employer_contribution_rate),
-            maxPfCap: pfSettings.max_pf_cap ? Number(pfSettings.max_pf_cap) : 1800,
-          });
-
-          const payableRatio = Number(pr.gross_salary) > 0
-            ? Math.max(0, (Number(pr.gross_salary) - Number(pr.non_payable_deduction)) / Number(pr.gross_salary))
-            : 0;
-          totalEmployerPF += Number((components.employer_pf * payableRatio).toFixed(2));
-          totalEmployerESI += Number((components.employer_esi * payableRatio).toFixed(2));
-        } catch (error) {
-          console.warn(`Could not calculate employer expenses for payroll ID ${pr.id}: ${error.message}`);
-        }
-      }
+      totalGrossSalaries += Number(pr.gross_salary);
+      totalEmployeeESI += Number(breakdown?.employeeEsi ?? 0);
+      totalEmployerPF += Number(breakdown?.employerPf ?? 0);
+      totalEmployerESI += Number(breakdown?.employerEsi ?? 0);
     }
 
     return {
       totalGrossSalaries: Number(totalGrossSalaries.toFixed(2)),
       totalEmployerPF: Number(totalEmployerPF.toFixed(2)),
       totalEmployerESI: Number(totalEmployerESI.toFixed(2)),
+      totalEmployeeESI: Number(totalEmployeeESI.toFixed(2)),
       status: overallStatus,
     };
   }
@@ -562,7 +540,7 @@ export class PayrollService {
       pendingPayrollCount: Number(result?.pendingPayrollCount || 0),
       taxDeductions: Number(result?.taxDeductions || 0),
       pfContributions: Number(result?.pfContributions || 0) + dynamicExpenses.totalEmployerPF,
-      esiContributions: dynamicExpenses.totalEmployerESI,
+      esiContributions: dynamicExpenses.totalEmployerESI + dynamicExpenses.totalEmployeeESI,
       processedCount: Number(result?.processedCount || 0),
     };
   }
@@ -592,10 +570,12 @@ export class PayrollService {
 
     let totalEmployerPf = 0;
     let totalEmployerEsi = 0;
+    let totalEmployeeEsi = 0;
     for (const { month, year } of disbursedMonths) {
       const summary = await this.getPayrollExpenseSummary(month, year);
       totalEmployerPf += summary.totalEmployerPF;
       totalEmployerEsi += summary.totalEmployerESI;
+      totalEmployeeEsi += summary.totalEmployeeESI;
     }
 
     const result = await this.payrollRepository.createQueryBuilder('pr')
@@ -606,7 +586,7 @@ export class PayrollService {
     return {
       pf: Number(result?.pf || 0) + totalEmployerPf,
       tax: Number(result?.tax || 0),
-      esi: totalEmployerEsi,
+      esi: totalEmployerEsi + totalEmployeeEsi,
     };
   }
 
@@ -633,7 +613,7 @@ export class PayrollService {
         name: `${monthNames[r.month - 1]} ${r.year}`,
         payrollCost: Number(r.net_cost),
         pf: Number(r.pf_total) + dynamicSummary.totalEmployerPF,
-        esi: dynamicSummary.totalEmployerESI,
+        esi: dynamicSummary.totalEmployerESI + dynamicSummary.totalEmployeeESI,
         tax: Number(r.tax_total),
       };
     }));

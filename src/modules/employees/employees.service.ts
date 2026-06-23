@@ -59,6 +59,13 @@ export class EmployeesService {
   }
 
   async findAll(): Promise<Employee[]> {
+    return this.employeesRepository.find({
+      where: { deleted_at: null as any },
+      order: { id: 'DESC' },
+    });
+  }
+
+  async findAllIncludingDeleted(): Promise<Employee[]> {
     return this.employeesRepository.find({ order: { id: 'DESC' } });
   }
 
@@ -169,6 +176,17 @@ export class EmployeesService {
     }
 
     Object.assign(employee, rest);
+
+    // Auto-deactivate if relieving_date has been reached
+    if (employee.relieving_date) {
+      const today = new Date();
+      today.setHours(0, 0, 0, 0);
+      const [ry, rm, rd] = String(employee.relieving_date).split('-').map(Number);
+      const relievingDate = new Date(ry, rm - 1, rd);
+      if (relievingDate <= today) {
+        employee.active_status = false;
+      }
+    }
     const saved = await this.employeesRepository.save(employee);
 
     if (newCtc !== undefined) {
@@ -239,11 +257,6 @@ export class EmployeesService {
       effective_from: effectiveFrom,
       is_active: true,
     }));
-  }
-
-  async remove(id: number): Promise<void> {
-    const employee = await this.findOne(id);
-    await this.employeesRepository.remove(employee);
   }
 
   async countAll(): Promise<number> {
@@ -757,7 +770,6 @@ export class EmployeesService {
       'Month',
       'Year',
       'Gross Salary',
-      'Non-Payable Deduction',
       'PF Deduction',
       'Tax Deduction',
       'Advance Recovery',
@@ -770,7 +782,6 @@ export class EmployeesService {
         this.escapeCsv(monthNames[p.month - 1]),
         this.escapeCsv(p.year),
         this.escapeCsv(p.gross_salary),
-        this.escapeCsv(p.non_payable_deduction),
         this.escapeCsv(p.pf_deduction),
         this.escapeCsv(p.tax_deduction),
         this.escapeCsv(p.advance_recovery),
@@ -784,7 +795,6 @@ export class EmployeesService {
     lines.push([
       'Financial Year',
       'Total Gross Salary',
-      'Total Non-Payable Deduction',
       'Total PF Deducted',
       'Total Tax Deducted',
       'Total Advance Recovered',
@@ -804,7 +814,6 @@ export class EmployeesService {
     for (const fy of Object.keys(fyGroups).sort()) {
       const group = fyGroups[fy];
       const totalGross = group.reduce((sum, p) => sum + Number(p.gross_salary), 0).toFixed(2);
-      const totalNpd = group.reduce((sum, p) => sum + Number(p.non_payable_deduction), 0).toFixed(2);
       const totalPF = group.reduce((sum, p) => sum + Number(p.pf_deduction), 0).toFixed(2);
       const totalTax = group.reduce((sum, p) => sum + Number(p.tax_deduction), 0).toFixed(2);
       const totalAdv = group.reduce((sum, p) => sum + Number(p.advance_recovery), 0).toFixed(2);
@@ -813,7 +822,6 @@ export class EmployeesService {
       lines.push([
         this.escapeCsv(fy),
         this.escapeCsv(totalGross),
-        this.escapeCsv(totalNpd),
         this.escapeCsv(totalPF),
         this.escapeCsv(totalTax),
         this.escapeCsv(totalAdv),

@@ -164,27 +164,40 @@ export class ReportsService {
       'Department',
       'Designation',
       'Gross Salary',
-      'Non Payable Deduction',
+      'Bonus / Incentives',
+      'Leave Encashment',
+      'ESI (Employee)',
       'PF Deduction',
+      'Late Arrival Deduction',
+      'Damages Recovery',
+      'Other Deductions',
       'Tax Deduction',
       'Advance Recovery',
       'Net Salary',
       'Status',
     ];
 
-    const rows = payrolls.map(pr => [
-      this.escapeCsv(pr.employee?.employee_code),
-      this.escapeCsv(pr.employee?.name),
-      this.escapeCsv(pr.employee?.department),
-      this.escapeCsv(pr.employee?.designation),
-      this.escapeCurrency(pr.gross_salary),
-      this.escapeCurrency(pr.non_payable_deduction),
-      this.escapeCurrency(pr.pf_deduction),
-      this.escapeCurrency(pr.tax_deduction),
-      this.escapeCurrency(pr.advance_recovery),
-      this.escapeCurrency(pr.net_salary),
-      pr.status,
-    ]);
+    const rows = payrolls.map(pr => {
+      const tb = (pr.tax_breakdown_json || {}) as any;
+      return [
+        this.escapeCsv(pr.employee?.employee_code),
+        this.escapeCsv(pr.employee?.name),
+        this.escapeCsv(pr.employee?.department),
+        this.escapeCsv(pr.employee?.designation),
+        this.escapeCurrency(pr.gross_salary),
+        this.escapeCurrency(pr.employee?.bonus_incentives ?? 0),
+        this.escapeCurrency(pr.employee?.leave_encashment ?? 0),
+        this.escapeCurrency(tb.employeeEsi ?? 0),
+        this.escapeCurrency(pr.pf_deduction),
+        this.escapeCurrency(pr.employee?.late_arrival_deduction ?? 0),
+        this.escapeCurrency(pr.employee?.damages_recovery ?? 0),
+        this.escapeCurrency(pr.employee?.other_deductions ?? 0),
+        this.escapeCurrency(pr.tax_deduction),
+        this.escapeCurrency(pr.advance_recovery),
+        this.escapeCurrency(pr.net_salary),
+        pr.status,
+      ];
+    });
 
     return [headers.join(','), ...rows.map(r => r.join(','))].join('\n');
   }
@@ -319,6 +332,7 @@ export class ReportsService {
       'Department',
       'Designation',
       'Joining Date',
+      'Relieving Date',
       'Active Status',
     ];
 
@@ -330,6 +344,7 @@ export class ReportsService {
       this.escapeCsv(emp.department),
       this.escapeCsv(emp.designation),
       this.escapeCsv(emp.joining_date),
+      this.escapeCsv(emp.relieving_date || ''),
       emp.active_status ? 'Active' : 'Inactive',
     ]);
 
@@ -356,15 +371,58 @@ export class ReportsService {
   async generateJoiningExitCsv(role: Role): Promise<string> {
     this.assertRole(role, [Role.HR]);
     const employees = await this.employeesService.findAll();
-    const headers = ['Employee Code', 'Name', 'Department', 'Designation', 'Joining Date', 'Record Type', 'Status'];
+    const headers = ['Employee Code', 'Name', 'Department', 'Designation', 'Joining Date', 'Relieving Date', 'Record Type', 'Status'];
     const rows = employees.map(emp => [
       this.escapeCsv(emp.employee_code),
       this.escapeCsv(emp.name),
       this.escapeCsv(emp.department),
       this.escapeCsv(emp.designation),
       this.escapeCsv(emp.joining_date),
+      this.escapeCsv(emp.relieving_date || ''),
       emp.active_status ? 'Joining' : 'Exit',
       emp.active_status ? 'Active' : 'Inactive',
+    ]);
+    return [headers.join(','), ...rows.map(r => r.join(','))].join('\n');
+  }
+
+  async generatePreviewSheetCsv(month: number, year: number, role: Role): Promise<string> {
+    this.assertRole(role, [Role.HR]);
+    const employees = await this.employeesService.findAll();
+    const active = employees.filter(e => e.active_status);
+    const headers = [
+      'Employee Code',
+      'Employee Name',
+      'Department',
+      'Designation',
+      'Days Present',
+      'Appraisal',
+      'Appraisal Effective Date',
+      'Bonus / Incentives',
+      'Leave Encashment',
+      'Late Arrival (days)',
+      'Damages Recovery',
+      'Other Deductions',
+      'Remarks',
+      'Joining Date',
+      'Relieving Date',
+    ];
+
+    const rows = active.map(emp => [
+      this.escapeCsv(emp.employee_code),
+      this.escapeCsv(emp.name),
+      this.escapeCsv(emp.department),
+      this.escapeCsv(emp.designation),
+      emp.no_of_days_present ?? 30,
+      Number(emp.appraisal) || 0,
+      this.escapeCsv(emp.appraisal_effective_date || ''),
+      Number(emp.bonus_incentives) || 0,
+      Number(emp.leave_encashment) || 0,
+      Number(emp.late_arrival_deduction) || 0,
+      Number(emp.damages_recovery) || 0,
+      Number(emp.other_deductions) || 0,
+      this.escapeCsv(emp.remarks || ''),
+      this.escapeCsv(emp.joining_date),
+      this.escapeCsv(emp.relieving_date || ''),
     ]);
 
     return [headers.join(','), ...rows.map(r => r.join(','))].join('\n');
