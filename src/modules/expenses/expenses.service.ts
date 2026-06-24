@@ -5,6 +5,7 @@ import { Expense } from './expense.entity';
 import { ExpenseCategory } from './expense-category.entity';
 import { CreateExpenseDto } from './dto/create-expense.dto';
 import { PayrollService } from '../payroll/payroll.service';
+import { AdvancesService } from '../advances/advances.service';
 
 @Injectable()
 export class ExpensesService {
@@ -14,6 +15,7 @@ export class ExpensesService {
     @InjectRepository(ExpenseCategory)
     private categoryRepository: Repository<ExpenseCategory>,
     private payrollService: PayrollService,
+    private advancesService: AdvancesService,
   ) {}
 
   async create(createDto: CreateExpenseDto): Promise<Expense> {
@@ -31,6 +33,7 @@ export class ExpensesService {
       if (summary.status === 'none') return [];
 
       const statusLabel = summary.status.charAt(0).toUpperCase() + summary.status.slice(1);
+      const outstandingAdvances = await this.advancesService.countTotalOutstanding();
       const dateStr = `${year}-${String(month).padStart(2, '0')}-28`;
       const startDate = `${year}-${String(month).padStart(2, '0')}-01`;
       const pseudoExpenses: Partial<Expense>[] = [];
@@ -76,6 +79,21 @@ export class ExpensesService {
           startDate,
           endDate: null,
           description: `Auto-calculated employer ESI from ${statusLabel.toLowerCase()} payroll for ${month}/${year}`,
+          created_at: new Date(),
+        } as any);
+      }
+
+      if (outstandingAdvances > 0) {
+        pseudoExpenses.push({
+          id: -4,
+          title: 'Employee Advances',
+          amount: outstandingAdvances,
+          category: 'advance',
+          frequency: 'monthly',
+          date: dateStr,
+          startDate,
+          endDate: null,
+          description: 'Outstanding employee advances treated as company expense for the month',
           created_at: new Date(),
         } as any);
       }

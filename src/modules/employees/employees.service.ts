@@ -1,4 +1,4 @@
-import { Injectable, ConflictException, NotFoundException } from '@nestjs/common';
+import { Injectable, ConflictException, NotFoundException, BadRequestException } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Between, Repository, LessThanOrEqual } from 'typeorm';
 import { Employee } from './employee.entity';
@@ -15,6 +15,7 @@ import { calculateAnnualTax } from '../../utils/tax-calculator.util';
 import { escapeCsv, parseCsvLine } from '../../common/utils/csv.util';
 import { getFinancialYear } from '../../common/utils/financial-year.util';
 import { calculateSalaryComponentsFromExistingRatios } from '../salary-structures/utils/salary-components.util';
+import { hasPendingEmployeeDeductions } from './employee-deactivation.util';
 
 @Injectable()
 export class EmployeesService {
@@ -177,15 +178,28 @@ export class EmployeesService {
 
     Object.assign(employee, rest);
 
-    // Auto-deactivate if relieving_date has been reached
-    if (employee.relieving_date) {
-      const today = new Date();
-      today.setHours(0, 0, 0, 0);
+    const today = new Date();
+    today.setHours(0, 0, 0, 0);
+    const shouldAutoDeactivate = Boolean(employee.relieving_date && (() => {
       const [ry, rm, rd] = String(employee.relieving_date).split('-').map(Number);
       const relievingDate = new Date(ry, rm - 1, rd);
-      if (relievingDate <= today) {
-        employee.active_status = false;
+      return relievingDate <= today;
+    })());
+
+    if (updateEmployeeDto.active_status === false || shouldAutoDeactivate) {
+      const pendingAdvance = await this.advanceRepository.findOne({
+        where: { employee_id: employee.id, is_fully_recovered: false },
+      });
+      if (pendingAdvance && Number(pendingAdvance.remaining_amount) > 0.01) {
+        throw new BadRequestException('Cannot deactivate employee while Advances are pending, Firstly clear all the dues.');
       }
+
+      const netPayableAmount = Number(employee.monthly_ctc || 0);
+      if (hasPendingEmployeeDeductions(employee, netPayableAmount)) {
+        throw new BadRequestException('Cannot deactivate employee while Damages Recovery or Other Deductions exceed the net payable amount. Clear the dues first.');
+      }
+
+      employee.active_status = false;
     }
     const saved = await this.employeesRepository.save(employee);
 

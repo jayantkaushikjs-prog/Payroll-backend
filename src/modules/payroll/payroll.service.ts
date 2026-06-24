@@ -19,6 +19,7 @@ import {
   isEsiApplicableForBasic,
   isPfApplicableForBasic,
 } from '../salary-structures/utils/salary-components.util';
+import { shouldIncludeAdvanceForPayrollRecovery } from '../advances/advance-recovery.util';
 
 @Injectable()
 export class PayrollService {
@@ -272,8 +273,11 @@ export class PayrollService {
     const totalDeductions = pfDeductionFinal + employeeEsiDeduction + ptDeduction + taxDeduction + lateArrivalDeductionAmount + damagesRecovery + otherDeductionsAmount;
     const totalEarnings = Number((payableGross + bonusIncentives + leaveEncashment).toFixed(2));
     let availableForAdvances = Math.max(0, Number((totalEarnings - totalDeductions).toFixed(2)));
+    const damageCarryForward = Math.max(0, Number((damagesRecovery - Math.max(0, totalEarnings - (pfDeductionFinal + employeeEsiDeduction + ptDeduction + taxDeduction + lateArrivalDeductionAmount + otherDeductionsAmount))).toFixed(2)));
 
     for (const adv of activeAdvances) {
+      if (!shouldIncludeAdvanceForPayrollRecovery(adv)) continue;
+
       if (adv.is_advance_salary) {
         const d = new Date(adv.date);
         let nm = d.getMonth() + 2; let ny = d.getFullYear();
@@ -288,6 +292,8 @@ export class PayrollService {
     }
 
     for (const adv of activeAdvances) {
+      if (!shouldIncludeAdvanceForPayrollRecovery(adv)) continue;
+
       if (adv.is_advance_salary) {
         const d = new Date(adv.date);
         let nm = d.getMonth() + 2; let ny = d.getFullYear();
@@ -526,6 +532,8 @@ export class PayrollService {
     employeeEsi: number;
     employerEsi: number;
     processedCount: number;
+    expectedPayrollThisMonth: number;
+    monthlyAdvancesOut: number;
   }> {
     const result = await this.payrollRepository.createQueryBuilder('pr')
       .select('SUM(pr.net_salary)', 'payrollTotal')
@@ -536,7 +544,62 @@ export class PayrollService {
       .where('pr.month = :month AND pr.year = :year', { month, year })
       .getRawOne();
 
+    const activeEmployees = await this.employeesService.findAll();
+    const activeEmployeeList = activeEmployees.filter(emp => emp.active_status);
+
+    let expectedPayrollThisMonth = 0;
+    for (const employee of activeEmployeeList) {
+      try {
+        const structure = await this.salaryStructuresService.findActiveByEmployee(employee.id).catch(() => null);
+        const monthlyCtc = Number(structure?.ctc || employee.monthly_ctc || 0);
+        const effectiveCtc = Number((monthlyCtc + Number(employee.appraisal || 0)).toFixed(2));
+        const daysInMonth = new Date(year, month, 0).getDate();
+        const monthStart = new Date(Date.UTC(year, month - 1, 1));
+        const monthEnd = new Date(Date.UTC(year, month - 1, daysInMonth));
+        const joiningDate = employee.joining_date ? new Date(`${employee.joining_date}T00:00:00.000Z`) : null;
+        const relievingDate = employee.relieving_date ? new Date(`${employee.relieving_date}T00:00:00.000Z`) : null;
+        let payableDays = daysInMonth;
+        if (joiningDate && monthEnd < joiningDate) {
+          payableDays = 0;
+        } else if (joiningDate && joiningDate.getUTCFullYear() === year && joiningDate.getUTCMonth() + 1 === month) {
+          payableDays = Math.max(0, payableDays - Math.max(0, joiningDate.getUTCDate() - 1));
+        }
+        if (relievingDate && monthStart > relievingDate) {
+          payableDays = 0;
+        } else if (relievingDate && relievingDate.getUTCFullYear() === year && relievingDate.getUTCMonth() + 1 === month) {
+          payableDays = Math.max(0, payableDays - Math.max(0, daysInMonth - relievingDate.getUTCDate()));
+        }
+        const ratio = daysInMonth > 0 ? payableDays / daysInMonth : 1;
+        const proratedCtc = Number((effectiveCtc * Math.max(0, Math.min(1, ratio))).toFixed(2));
+        expectedPayrollThisMonth += proratedCtc;
+      } catch {
+        const structure = await this.salaryStructuresService.findActiveByEmployee(employee.id).catch(() => null);
+        const monthlyCtc = Number(structure?.ctc || employee.monthly_ctc || 0);
+        const effectiveCtc = Number((monthlyCtc + Number(employee.appraisal || 0)).toFixed(2));
+        const daysInMonth = new Date(year, month, 0).getDate();
+        const monthStart = new Date(Date.UTC(year, month - 1, 1));
+        const monthEnd = new Date(Date.UTC(year, month - 1, daysInMonth));
+        const joiningDate = employee.joining_date ? new Date(`${employee.joining_date}T00:00:00.000Z`) : null;
+        const relievingDate = employee.relieving_date ? new Date(`${employee.relieving_date}T00:00:00.000Z`) : null;
+        let payableDays = daysInMonth;
+        if (joiningDate && monthEnd < joiningDate) {
+          payableDays = 0;
+        } else if (joiningDate && joiningDate.getUTCFullYear() === year && joiningDate.getUTCMonth() + 1 === month) {
+          payableDays = Math.max(0, payableDays - Math.max(0, joiningDate.getUTCDate() - 1));
+        }
+        if (relievingDate && monthStart > relievingDate) {
+          payableDays = 0;
+        } else if (relievingDate && relievingDate.getUTCFullYear() === year && relievingDate.getUTCMonth() + 1 === month) {
+          payableDays = Math.max(0, payableDays - Math.max(0, daysInMonth - relievingDate.getUTCDate()));
+        }
+        const ratio = daysInMonth > 0 ? payableDays / daysInMonth : 1;
+        expectedPayrollThisMonth += Number((effectiveCtc * Math.max(0, Math.min(1, ratio))).toFixed(2));
+      }
+    }
+
     const dynamicExpenses = await this.getPayrollExpenseSummary(month, year);
+    const advancesRaisedThisMonth = await this.advancesService.countRaisedThisMonth(month, year);
+    const monthlyAdvancesOut = await this.advancesService.countTotalOutstanding();
 
     return {
       payrollTotal: Number(result?.payrollTotal || 0),
@@ -548,6 +611,8 @@ export class PayrollService {
       employeeEsi: dynamicExpenses.totalEmployeeESI,
       employerEsi: dynamicExpenses.totalEmployerESI,
       processedCount: Number(result?.processedCount || 0),
+      expectedPayrollThisMonth: Number(expectedPayrollThisMonth.toFixed(2)),
+      monthlyAdvancesOut: Number(advancesRaisedThisMonth.toFixed(2)),
     };
   }
 
@@ -597,7 +662,11 @@ export class PayrollService {
   }
 
   async getPayrollTrends(): Promise<any[]> {
-    // Group disbursed payroll costs by month and year for last 6 runs
+    const monthNames = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+    const now = new Date();
+    const currentMonth = now.getMonth() + 1;
+    const currentYear = now.getFullYear();
+
     const results = await this.payrollRepository.createQueryBuilder('pr')
       .select('pr.month', 'month')
       .addSelect('pr.year', 'year')
@@ -609,20 +678,43 @@ export class PayrollService {
       .addGroupBy('pr.month')
       .orderBy('pr.year', 'ASC')
       .addOrderBy('pr.month', 'ASC')
-      .limit(6)
       .getRawMany();
 
-    const monthNames = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
-    return Promise.all(results.map(async r => {
+    const trendEntries = await Promise.all(results.map(async r => {
       const dynamicSummary = await this.getPayrollExpenseSummary(r.month, r.year);
       return {
-        name: `${monthNames[r.month - 1]} ${r.year}`,
+        month: Number(r.month),
+        year: Number(r.year),
+        name: `${monthNames[Number(r.month) - 1]} ${r.year}`,
         payrollCost: Number(r.net_cost),
         pf: Number(r.pf_total) + dynamicSummary.totalEmployerPF,
         esi: dynamicSummary.totalEmployerESI + dynamicSummary.totalEmployeeESI,
         tax: Number(r.tax_total),
       };
     }));
+
+    const currentMonthSummary = await this.getCurrentMonthFinanceSummary(currentMonth, currentYear);
+    const currentMonthEntry = {
+      month: currentMonth,
+      year: currentYear,
+      name: `${monthNames[currentMonth - 1]} ${currentYear}`,
+      payrollCost: Number(currentMonthSummary.expectedPayrollThisMonth || 0),
+      pf: Number(currentMonthSummary.employerPf || 0) + Number(currentMonthSummary.employeePf || 0),
+      esi: Number(currentMonthSummary.employerEsi || 0) + Number(currentMonthSummary.employeeEsi || 0),
+      tax: Number(currentMonthSummary.taxDeductions || 0),
+    };
+
+    const merged = [...trendEntries];
+    const currentIndex = merged.findIndex(entry => entry.month === currentMonth && entry.year === currentYear);
+    if (currentIndex >= 0) {
+      merged[currentIndex] = currentMonthEntry;
+    } else {
+      merged.push(currentMonthEntry);
+    }
+
+    return merged
+      .sort((a, b) => (a.year - b.year) || (a.month - b.month))
+      .slice(-6);
   }
 
   async removeDrafts(month: number, year: number): Promise<void> {

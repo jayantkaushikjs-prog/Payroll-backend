@@ -44,6 +44,12 @@ export class AdvancesController {
     return this.advancesService.remove(+id);
   }
 
+  @Post(':id/manual-return')
+  @RequirePermissions(Permission.MANAGE_ADVANCES)
+  manualReturn(@Param('id') id: string, @Body() dto: { amount: number; date: string; notes?: string }) {
+    return this.advancesService.manualReturn(+id, dto);
+  }
+
   // ─── Advance Logs ─────────────────────────────────────────────────────────────
 
   @Post('logs')

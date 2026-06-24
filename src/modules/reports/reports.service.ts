@@ -132,9 +132,10 @@ export class ReportsService {
       dashboard.stats.employerEsi = financeSummary.employerEsi;
       dashboard.stats.pfContributions = financeSummary.employeePf + financeSummary.employerPf;
       dashboard.stats.esiContributions = financeSummary.employeeEsi + financeSummary.employerEsi;
-      dashboard.stats.totalPayrollThisMonth = financeSummary.payrollTotal;
+      dashboard.stats.totalPayrollThisMonth = financeSummary.expectedPayrollThisMonth;
       dashboard.stats.totalPayrollCost = financeSummary.totalPayrollCost;
       dashboard.stats.totalExpensesThisMonth = expensesSummary.total;
+      dashboard.stats.monthlyAdvancesOut = financeSummary.monthlyAdvancesOut;
       dashboard.summaries.taxPfEsi = {
         tax: deductionTotals.tax,
         pf: deductionTotals.pf,

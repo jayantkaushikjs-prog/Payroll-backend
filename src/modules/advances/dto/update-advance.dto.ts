@@ -38,4 +38,8 @@ export class UpdateAdvanceDto {
   @Min(2000)
   @Max(2100)
   start_year?: number;
+
+  @IsOptional()
+  @IsIn(['manual', 'payroll'])
+  entry_type?: 'manual' | 'payroll';
 }

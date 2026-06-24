@@ -42,4 +42,8 @@ export class CreateAdvanceDto {
   @IsOptional()
   @IsBoolean()
   is_advance_salary?: boolean;
+
+  @IsOptional()
+  @IsIn(['manual', 'payroll'], { message: 'Entry type must be either manual or payroll' })
+  entry_type?: 'manual' | 'payroll';
 }

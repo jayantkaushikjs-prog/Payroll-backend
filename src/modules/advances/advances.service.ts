@@ -7,6 +7,7 @@ import { CreateAdvanceDto } from './dto/create-advance.dto';
 import { CreateAdvanceLogDto } from './dto/create-advance-log.dto';
 import { UpdateAdvanceLogDto } from './dto/update-advance-log.dto';
 import { EmployeesService } from '../employees/employees.service';
+import { calculateManualReturnState } from './advance-return.util';
 
 @Injectable()
 export class AdvancesService {
@@ -25,14 +26,30 @@ export class AdvancesService {
       throw new BadRequestException('Installment amount is required and must be greater than 0 for installment recovery type');
     }
 
+    const { entry_type, ...rest } = createDto;
+    const entryLabel = entry_type === 'manual' ? 'Entry type: manual' : 'Entry type: via payroll';
+    const reasonText = [rest.reason, entryLabel].filter(Boolean).join(' | ');
+
     const advance = this.advancesRepository.create({
-      ...createDto,
+      ...rest,
+      entry_type: entry_type || 'manual',
+      reason: reasonText || null,
       remaining_amount: createDto.amount,
       total_recovered: 0,
       is_fully_recovered: false,
     });
 
-    return this.advancesRepository.save(advance);
+    const saved = await this.advancesRepository.save(advance);
+    await this.advanceLogsRepository.save(this.advanceLogsRepository.create({
+      employee_id: saved.employee_id,
+      amount: Number(saved.amount),
+      borrowed_date: saved.date,
+      notes: reasonText || 'Advance issued',
+      status: 'open',
+      amount_returned: 0,
+    }));
+
+    return saved;
   }
 
   async findAll(): Promise<EmployeeAdvance[]> {
@@ -107,6 +124,14 @@ export class AdvancesService {
     return Number(result?.total || 0);
   }
 
+  async countRaisedThisMonth(month: number, year: number): Promise<number> {
+    const result = await this.advancesRepository.createQueryBuilder('adv')
+      .select('SUM(adv.amount)', 'total')
+      .where('adv.start_month = :month AND adv.start_year = :year', { month, year })
+      .getRawOne();
+    return Number(result?.total || 0);
+  }
+
   async update(id: number, updateDto: Partial<CreateAdvanceDto>): Promise<EmployeeAdvance> {
     const adv = await this.advancesRepository.findOne({ where: { id } });
     if (!adv) {
@@ -144,12 +169,50 @@ export class AdvancesService {
     if (updateDto.start_month !== undefined) adv.start_month = updateDto.start_month;
     if (updateDto.start_year !== undefined) adv.start_year = updateDto.start_year;
     if (updateDto.is_advance_salary !== undefined) adv.is_advance_salary = updateDto.is_advance_salary;
+    if (updateDto.entry_type !== undefined) adv.entry_type = updateDto.entry_type;
 
     return this.advancesRepository.save(adv);
   }
 
   async remove(id: number): Promise<void> {
     await this.advancesRepository.delete(id);
+  }
+
+  async manualReturn(advanceId: number, dto: { amount: number; date: string; notes?: string }): Promise<EmployeeAdvance> {
+    const advance = await this.advancesRepository.findOne({ where: { id: advanceId } });
+    if (!advance) {
+      throw new NotFoundException(`Advance ID ${advanceId} not found`);
+    }
+
+    const amount = Number(dto.amount || 0);
+    if (amount <= 0) {
+      throw new BadRequestException('Return amount must be greater than 0');
+    }
+
+    const remainingBefore = Number(advance.remaining_amount || 0);
+    const state = calculateManualReturnState({
+      amount,
+      remainingBefore,
+      totalRecovered: Number(advance.total_recovered || 0),
+      originalAmount: Number(advance.amount),
+    });
+
+    advance.total_recovered = state.newRecovered;
+    advance.remaining_amount = state.newRemaining;
+    advance.is_fully_recovered = state.isFullyRecovered;
+
+    await this.advancesRepository.save(advance);
+    await this.advanceLogsRepository.save(this.advanceLogsRepository.create({
+      employee_id: advance.employee_id,
+      amount: state.returnAmount,
+      borrowed_date: dto.date,
+      actual_return_date: dto.date,
+      notes: dto.notes || 'Manual return recorded',
+      status: state.status,
+      amount_returned: state.returnAmount,
+    }));
+
+    return advance;
   }
 
   // ─── Advance Logs (Manual Borrow/Return tracking) ───────────────────────────

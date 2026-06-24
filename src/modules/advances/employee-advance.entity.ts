@@ -46,6 +46,9 @@ export class EmployeeAdvance {
   @Column({ default: false })
   is_advance_salary: boolean;
 
+  @Column({ type: 'varchar', length: 20, default: 'manual' })
+  entry_type: 'manual' | 'payroll';
+
   @CreateDateColumn()
   created_at: Date;
 }

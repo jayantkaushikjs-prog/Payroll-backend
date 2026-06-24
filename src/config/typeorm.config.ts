@@ -44,6 +44,6 @@ export default new DataSource({
     BlacklistedToken,
     HrPreviewReview,
   ],
-  migrations: ['src/database/migrations/*.ts'],
+  migrations: ['src/migrations/*.ts', 'src/database/migrations/*.ts'],
   synchronize: false,
 });
