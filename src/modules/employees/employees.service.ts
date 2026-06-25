@@ -161,6 +161,11 @@ export class EmployeesService {
 
     const { monthly_ctc, appraisal, appraisal_effective_date, ...rest } = updateEmployeeDto;
 
+    // Capture whether the PF toggle is actually changing, BEFORE Object.assign mutates the entity
+    const pfDeductionChanged =
+      updateEmployeeDto.pf_deduction !== undefined &&
+      updateEmployeeDto.pf_deduction !== employee.pf_deduction;
+
     // Determine if this is an appraisal increment
     let newCtc: number | undefined;
     let effectiveDate: string | undefined;
@@ -201,29 +206,39 @@ export class EmployeesService {
 
       employee.active_status = false;
     }
+
     const saved = await this.employeesRepository.save(employee);
 
     if (newCtc !== undefined) {
-      // Update employee's monthly CTC to reflect appraisal increment
+      // Appraisal branch: update CTC, sync structure, then clear appraisal fields
       saved.monthly_ctc = newCtc;
       await this.employeesRepository.save(saved);
-      // Sync salary structure with the new CTC and effective date
       await this.syncSalaryStructureFromMonthlyCtc(saved, newCtc, effectiveDate);
-      // Reset appraisal fields after creating the revision
       saved.appraisal = 0;
       saved.appraisal_effective_date = null;
       await this.employeesRepository.save(saved);
     } else if (monthly_ctc !== undefined) {
-      await this.syncSalaryStructureFromMonthlyCtc(saved, Number(monthly_ctc));
+      // Direct CTC update: re-sync with new CTC value.
+      // If pf_deduction also changed in the same request, Object.assign has already
+      // applied it to `saved`; force sync so equal CTC does not skip PF recalculation.
+      await this.syncSalaryStructureFromMonthlyCtc(saved, Number(monthly_ctc), undefined, pfDeductionChanged);
+    } else if (pfDeductionChanged) {
+      // PF toggle changed without a CTC change: force a re-sync using the current
+      // CTC so that the new pf_deduction value is reflected in the salary structure.
+      await this.syncSalaryStructureFromMonthlyCtc(saved, Number(saved.monthly_ctc), undefined, true);
     }
 
     return saved;
   }
 
+  // forceSync bypasses the early-exit guard that skips re-sync when CTC hasn't changed.
+  // This is needed when only a non-CTC field (e.g. pf_deduction) changes but the
+  // salary structure components still need to be recalculated.
   private async syncSalaryStructureFromMonthlyCtc(
     employee: Employee,
     monthlyCtcValue?: number,
     preferredEffectiveFrom?: string,
+    forceSync = false,
   ): Promise<void> {
     const ctc = Number(monthlyCtcValue || 0);
     if (!ctc || isNaN(ctc) || ctc <= 0) {
@@ -234,7 +249,12 @@ export class EmployeesService {
       where: { employee_id: employee.id, is_active: true },
     });
 
-    if (activeStructure && Number(activeStructure.ctc) === ctc && preferredEffectiveFrom === undefined) {
+    if (
+      !forceSync &&
+      activeStructure &&
+      Number(activeStructure.ctc) === ctc &&
+      preferredEffectiveFrom === undefined
+    ) {
       return;
     }
 
@@ -442,7 +462,7 @@ export class EmployeesService {
         if (data.phone) csvPhones.add(data.phone);
 
         const existingCode = await this.employeesRepository.findOne({ where: { employee_code: data.employee_code } });
-        
+
         const existingEmail = await this.employeesRepository.findOne({ where: { email: data.email } });
         if (existingEmail && (!existingCode || existingEmail.id !== existingCode.id)) {
           errors.push(`Row ${i + 1}: Email "${data.email}" is already taken by another employee`);
@@ -547,10 +567,10 @@ export class EmployeesService {
       pfDeducted += Number(p.pf_deduction) * ratio;
       taxDeducted += Number(p.tax_deduction) * ratio;
       advanceRecovered += Number(p.advance_recovery) * ratio;
-      
+
       const breakdown = p.tax_breakdown_json as any;
       esiDeducted += Number(breakdown?.employeeEsiDeduction || 0) * ratio;
-      
+
       paidMonthsCount += ratio;
     });
 
@@ -624,7 +644,7 @@ export class EmployeesService {
         const tax = employee.tax_deduction !== false ? monthlyTdsRemaining : 0;
 
         const net = monthlyGross - pf - esi - tax;
-        
+
         const ratio = getProrationRatio(m.year, m.month);
         amountToBePaid += net * ratio;
         expectedPFRemaining += pf * ratio;
@@ -658,7 +678,6 @@ export class EmployeesService {
         is_fully_recovered: advance.is_fully_recovered,
         is_advance_salary: advance.is_advance_salary,
       }));
-
 
     // Compute employer PF and ESI from the active structure for accurate breakdown display
     let structureEmployerPf = 0;
@@ -720,7 +739,7 @@ export class EmployeesService {
   async generateFinancialsCsv(employeeId: number, startDateStr: string, endDateStr: string): Promise<string> {
     const employee = await this.findOne(employeeId);
     const summary = await this.getFinancialSummary(employeeId, undefined, startDateStr, endDateStr);
-    
+
     const startDate = new Date(startDateStr);
     const endDate = new Date(endDateStr);
 
