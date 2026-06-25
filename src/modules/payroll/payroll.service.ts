@@ -522,6 +522,44 @@ export class PayrollService {
     return Number(result?.total || 0);
   }
 
+  private async getCurrentMonthDynamicProjection(month: number, year: number): Promise<{
+    taxDeductions: number;
+    employeePf: number;
+    employerPf: number;
+    employeeEsi: number;
+    employerEsi: number;
+  }> {
+    const activeEmployees = await this.employeesService.findAll();
+    const activeEmployeeList = activeEmployees.filter(emp => emp.active_status);
+
+    let taxDeductions = 0;
+    let employeePf = 0;
+    let employerPf = 0;
+    let employeeEsi = 0;
+    let employerEsi = 0;
+
+    for (const employee of activeEmployeeList) {
+      try {
+        const calc = await this.calculateSingleEmployee(employee.id, month, year);
+        taxDeductions += Number(calc.taxDeduction || 0);
+        employeePf += Number(calc.pfDeduction || 0);
+        employeeEsi += Number(calc.employeeEsiDeduction || 0);
+        employerPf += Number(calc.taxBreakdown?.employerPf || 0);
+        employerEsi += Number(calc.taxBreakdown?.employerEsi || 0);
+      } catch {
+        // Skip employees that cannot be projected for the current month.
+      }
+    }
+
+    return {
+      taxDeductions: Number(taxDeductions.toFixed(2)),
+      employeePf: Number(employeePf.toFixed(2)),
+      employerPf: Number(employerPf.toFixed(2)),
+      employeeEsi: Number(employeeEsi.toFixed(2)),
+      employerEsi: Number(employerEsi.toFixed(2)),
+    };
+  }
+
   async getCurrentMonthFinanceSummary(month: number, year: number): Promise<{
     payrollTotal: number;
     totalPayrollCost: number;
@@ -546,6 +584,7 @@ export class PayrollService {
 
     const activeEmployees = await this.employeesService.findAll();
     const activeEmployeeList = activeEmployees.filter(emp => emp.active_status);
+    const dynamicProjection = await this.getCurrentMonthDynamicProjection(month, year);
 
     let expectedPayrollThisMonth = 0;
     for (const employee of activeEmployeeList) {
@@ -605,11 +644,11 @@ export class PayrollService {
       payrollTotal: Number(result?.payrollTotal || 0),
       totalPayrollCost: dynamicExpenses.totalNetSalaries + dynamicExpenses.totalEmployerPF + dynamicExpenses.totalEmployerESI,
       pendingPayrollCount: Number(result?.pendingPayrollCount || 0),
-      taxDeductions: Number(result?.taxDeductions || 0),
-      employeePf: Number(result?.pfContributions || 0),
-      employerPf: dynamicExpenses.totalEmployerPF,
-      employeeEsi: dynamicExpenses.totalEmployeeESI,
-      employerEsi: dynamicExpenses.totalEmployerESI,
+      taxDeductions: dynamicProjection.taxDeductions,
+      employeePf: dynamicProjection.employeePf,
+      employerPf: dynamicProjection.employerPf,
+      employeeEsi: dynamicProjection.employeeEsi,
+      employerEsi: dynamicProjection.employerEsi,
       processedCount: Number(result?.processedCount || 0),
       expectedPayrollThisMonth: Number(expectedPayrollThisMonth.toFixed(2)),
       monthlyAdvancesOut: Number(advancesRaisedThisMonth.toFixed(2)),
@@ -631,6 +670,11 @@ export class PayrollService {
   }
 
   async getSumDeductions(): Promise<{ pf: number; tax: number; esi: number }> {
+    const now = new Date();
+    const currentMonth = now.getMonth() + 1;
+    const currentYear = now.getFullYear();
+    const currentProjection = await this.getCurrentMonthDynamicProjection(currentMonth, currentYear);
+
     const disbursedMonths = await this.payrollRepository.createQueryBuilder('pr')
       .select('pr.month', 'month')
       .addSelect('pr.year', 'year')
@@ -655,9 +699,9 @@ export class PayrollService {
       .where('pr.status = :status', { status: 'disbursed' })
       .getRawOne();
     return {
-      pf: Number(result?.pf || 0) + totalEmployerPf,
-      tax: Number(result?.tax || 0),
-      esi: totalEmployerEsi + totalEmployeeEsi,
+      pf: Number(result?.pf || 0) + totalEmployerPf + currentProjection.employeePf + currentProjection.employerPf,
+      tax: Number(result?.tax || 0) + currentProjection.taxDeductions,
+      esi: totalEmployerEsi + totalEmployeeEsi + currentProjection.employerEsi + currentProjection.employeeEsi,
     };
   }
 
