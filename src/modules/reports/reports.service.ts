@@ -37,7 +37,7 @@ export class ReportsService {
   }
 
   private escapeCurrency(value: number | string | null | undefined): string {
-    return this.escapeCsv(formatCurrency(value));
+    return this.escapeCsv(Number(value ?? 0).toFixed(2));
   }
 
   private canViewHr(role: Role): boolean {
