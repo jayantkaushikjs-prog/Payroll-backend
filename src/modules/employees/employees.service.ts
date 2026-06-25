@@ -17,6 +17,15 @@ import { getFinancialYear } from '../../common/utils/financial-year.util';
 import { calculateSalaryComponentsFromExistingRatios } from '../salary-structures/utils/salary-components.util';
 import { hasPendingEmployeeDeductions } from './employee-deactivation.util';
 
+const PF_WAGE_LIMIT = 15000;
+const isPfRequiredByMonthlyCtc = (monthlyCtc?: number | string | null): boolean => {
+  const ctc = Number(monthlyCtc || 0);
+  if (!ctc || isNaN(ctc) || ctc <= 0) {
+    return false;
+  }
+  return ctc * 0.5 <= PF_WAGE_LIMIT;
+};
+
 @Injectable()
 export class EmployeesService {
   constructor(
@@ -53,7 +62,10 @@ export class EmployeesService {
       throw new ConflictException('Email already exists');
     }
 
-    const employee = this.employeesRepository.create(createEmployeeDto);
+    const employee = this.employeesRepository.create({
+      ...createEmployeeDto,
+      pf_deduction: createEmployeeDto.pf_deduction || isPfRequiredByMonthlyCtc(createEmployeeDto.monthly_ctc),
+    });
     const saved = await this.employeesRepository.save(employee);
     await this.syncSalaryStructureFromMonthlyCtc(saved, createEmployeeDto.monthly_ctc, saved.joining_date);
     return saved;
@@ -183,6 +195,12 @@ export class EmployeesService {
 
     Object.assign(employee, rest);
 
+    const pfDeductionBeforeAutoRule = employee.pf_deduction;
+    if (isPfRequiredByMonthlyCtc(employee.monthly_ctc)) {
+      employee.pf_deduction = true;
+    }
+    const salaryPfDeductionChanged = pfDeductionChanged || employee.pf_deduction !== pfDeductionBeforeAutoRule;
+
     const today = new Date();
     today.setHours(0, 0, 0, 0);
     const shouldAutoDeactivate = Boolean(employee.relieving_date && (() => {
@@ -212,6 +230,9 @@ export class EmployeesService {
     if (newCtc !== undefined) {
       // Appraisal branch: update CTC, sync structure, then clear appraisal fields
       saved.monthly_ctc = newCtc;
+      if (isPfRequiredByMonthlyCtc(newCtc)) {
+        saved.pf_deduction = true;
+      }
       await this.employeesRepository.save(saved);
       await this.syncSalaryStructureFromMonthlyCtc(saved, newCtc, effectiveDate);
       saved.appraisal = 0;
@@ -221,8 +242,8 @@ export class EmployeesService {
       // Direct CTC update: re-sync with new CTC value.
       // If pf_deduction also changed in the same request, Object.assign has already
       // applied it to `saved`; force sync so equal CTC does not skip PF recalculation.
-      await this.syncSalaryStructureFromMonthlyCtc(saved, Number(monthly_ctc), undefined, pfDeductionChanged);
-    } else if (pfDeductionChanged) {
+      await this.syncSalaryStructureFromMonthlyCtc(saved, Number(monthly_ctc), undefined, salaryPfDeductionChanged);
+    } else if (salaryPfDeductionChanged) {
       // PF toggle changed without a CTC change: force a re-sync using the current
       // CTC so that the new pf_deduction value is reflected in the salary structure.
       await this.syncSalaryStructureFromMonthlyCtc(saved, Number(saved.monthly_ctc), undefined, true);
