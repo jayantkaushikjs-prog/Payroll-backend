@@ -205,7 +205,7 @@ export class AppModule implements OnApplicationBootstrap {
         ifsc: 'CHAS0001234',
         tax_regime: 'new',
         active_status: true,
-        pf_deduction: true,
+        pf_deduction: false,
       },
       {
         employee_code: 'EMP002',
@@ -220,7 +220,7 @@ export class AppModule implements OnApplicationBootstrap {
         ifsc: 'WFLS0005678',
         tax_regime: 'new',
         active_status: true,
-        pf_deduction: true,
+        pf_deduction: false,
       },
     ];
 
@@ -228,7 +228,7 @@ export class AppModule implements OnApplicationBootstrap {
       ctc,
       basicPercent: 50,
       hraPercent: 40,
-      pfDeduction: true,
+      pfDeduction: false,
       employerContributionRate: 12,
       maxPfCap: 1800,
     }));

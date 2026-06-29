@@ -69,7 +69,9 @@ export class EmployeesService {
 
     const employee = this.employeesRepository.create({
       ...createEmployeeDto,
-      pf_deduction: createEmployeeDto.pf_deduction || isPfRequiredByMonthlyCtc(createEmployeeDto.monthly_ctc),
+      pf_deduction: createEmployeeDto.pf_deduction !== undefined
+        ? createEmployeeDto.pf_deduction
+        : isPfRequiredByMonthlyCtc(createEmployeeDto.monthly_ctc),
     });
     const saved = await this.employeesRepository.save(employee);
     await this.syncSalaryStructureFromMonthlyCtc(saved, createEmployeeDto.monthly_ctc, saved.joining_date);
