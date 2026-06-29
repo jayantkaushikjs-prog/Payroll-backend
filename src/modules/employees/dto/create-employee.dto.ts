@@ -111,7 +111,7 @@ export class CreateEmployeeDto {
   @IsOptional()
   @IsString()
   @Transform(({ value }) => typeof value === 'string' ? value.trim() || undefined : value)
-  @Length(5, 50, { message: 'PF No. / UAN must be between 5 and 50 characters' })
+  @Matches(/^\d{10}$/, { message: 'PF No. / UAN must be 12 characters' })
   pf_uan?: string;
 
   @IsOptional()
