@@ -461,6 +461,7 @@ export class PayrollService {
    * Returns totals for salary, employer PF, and employer ESI across all active payrolls.
    */
   async getPayrollExpenseSummary(month: number, year: number): Promise<{
+    totalMonthlyCtc: number;
     totalNetSalaries: number;
     totalEmployerPF: number;
     totalEmployerESI: number;
@@ -469,7 +470,7 @@ export class PayrollService {
   }> {
     const payrolls = await this.getPayrollForMonthAndYear(month, year);
     if (payrolls.length === 0) {
-      return { totalNetSalaries: 0, totalEmployerPF: 0, totalEmployerESI: 0, totalEmployeeESI: 0, status: 'none' };
+      return { totalMonthlyCtc: 0, totalNetSalaries: 0, totalEmployerPF: 0, totalEmployerESI: 0, totalEmployeeESI: 0, status: 'none' };
     }
 
     // Determine overall status (highest status wins)
@@ -481,6 +482,7 @@ export class PayrollService {
       }
     }
 
+    let totalMonthlyCtc = 0;
     let totalNetSalaries = 0;
     let totalEmployerPF = 0;
     let totalEmployerESI = 0;
@@ -488,6 +490,7 @@ export class PayrollService {
 
     for (const pr of payrolls) {
       const breakdown = pr.tax_breakdown_json as any;
+      totalMonthlyCtc += Number(breakdown?.ctc ?? 0);
       totalNetSalaries += Number(pr.net_salary);
       totalEmployeeESI += Number(breakdown?.employeeEsi ?? 0);
       totalEmployerPF += Number(breakdown?.employerPf ?? 0);
@@ -495,6 +498,7 @@ export class PayrollService {
     }
 
     return {
+      totalMonthlyCtc: Number(totalMonthlyCtc.toFixed(2)),
       totalNetSalaries: Number(totalNetSalaries.toFixed(2)),
       totalEmployerPF: Number(totalEmployerPF.toFixed(2)),
       totalEmployerESI: Number(totalEmployerESI.toFixed(2)),

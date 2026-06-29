@@ -38,17 +38,17 @@ export class ExpensesService {
       const startDate = `${year}-${String(month).padStart(2, '0')}-01`;
       const pseudoExpenses: Partial<Expense>[] = [];
 
-      if (summary.totalNetSalaries > 0) {
+      if (summary.totalMonthlyCtc > 0) {
         pseudoExpenses.push({
           id: -1,
           title: `Employee Salaries (${statusLabel})`,
-          amount: summary.totalNetSalaries,
+          amount: summary.totalMonthlyCtc,
           category: 'salary',
           frequency: 'monthly',
           date: dateStr,
           startDate,
           endDate: null,
-          description: `Auto-calculated from ${statusLabel.toLowerCase()} payroll for ${month}/${year}`,
+          description: `Auto-calculated monthly CTC from ${statusLabel.toLowerCase()} payroll for ${month}/${year}`,
           created_at: new Date(),
         } as any);
       }
@@ -240,6 +240,13 @@ export class ExpensesService {
     const category = await this.categoryRepository.findOne({ where: { id } });
     if (!category) {
       throw new NotFoundException(`Expense category with ID ${id} not found`);
+    }
+    if (['salary', 'pf', 'esi'].includes(category.name)) {
+      throw new ConflictException('Payroll expense categories cannot be deleted');
+    }
+    const linkedExpenses = await this.expensesRepository.count({ where: { category: category.name } });
+    if (linkedExpenses > 0) {
+      throw new ConflictException('This category is used by existing expenses and cannot be deleted');
     }
     await this.categoryRepository.remove(category);
   }
