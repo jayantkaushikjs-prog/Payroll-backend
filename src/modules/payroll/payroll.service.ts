@@ -171,7 +171,7 @@ export class PayrollService {
     const pfDeduction         = Number(Math.min(payableBasic * pfEmployeeRate,  maxPfCap * prorateRatio).toFixed(2));
     const employeeEsiDeduction = esiApplicable ? Number((payableBasic * esiEmployeeRate).toFixed(2)) : 0;
     const pfDeductionFinal    = pfApplicable ? pfDeduction : 0;
-    const ptDeduction         = appliedPt * prorateRatio > 0 ? Number((appliedPt * prorateRatio).toFixed(2)) : 0;
+    const ptDeduction         = appliedPt > 0 ? Number(appliedPt.toFixed(2)) : 0;
     
     // Prorated Employer contributions
     const employerPfFinal     = pfApplicable ? Number(Math.min(payableBasic * pfEmployerRate, maxPfCap * prorateRatio).toFixed(2)) : 0;
