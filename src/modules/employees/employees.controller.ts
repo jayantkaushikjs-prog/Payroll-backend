@@ -37,6 +37,12 @@ export class EmployeesController {
     return res.status(200).send(csvContent);
   }
 
+  @Get('next-code')
+  @RequirePermissions(Permission.CREATE_EMPLOYEE)
+  getNextCode() {
+    return this.employeesService.generateNextEmployeeCode();
+  }
+
   @Post()
   @RequirePermissions(Permission.CREATE_EMPLOYEE)
   create(@Body() createEmployeeDto: CreateEmployeeDto) {
@@ -45,8 +51,11 @@ export class EmployeesController {
 
   @Post('import')
   @RequirePermissions(Permission.CREATE_EMPLOYEE)
-  importCsv(@Body('csvContent') csvContent: string) {
-    return this.employeesService.importCsv(csvContent);
+  importCsv(@Body() body: any) {
+    if (body.employees) {
+      return this.employeesService.importEmployeesJson(body.employees);
+    }
+    return this.employeesService.importCsv(body.csvContent);
   }
 
   @Get('departments')

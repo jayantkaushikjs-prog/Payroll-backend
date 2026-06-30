@@ -395,6 +395,7 @@ export class ReportsService {
     this.assertRole(role, [Role.HR]);
     const employees = await this.employeesService.findAll();
     const active = employees.filter(e => e.active_status);
+    const daysInMonth = new Date(year, month, 0).getDate();
     const headers = [
       'Employee Code',
       'Employee Name',
@@ -418,7 +419,7 @@ export class ReportsService {
       this.escapeCsv(emp.name),
       this.escapeCsv(emp.department),
       this.escapeCsv(emp.designation),
-      emp.no_of_days_present ?? 30,
+      emp.no_of_days_present ?? daysInMonth,
       Number(emp.appraisal) || 0,
       this.escapeCsv(emp.appraisal_effective_date || ''),
       Number(emp.bonus_incentives) || 0,

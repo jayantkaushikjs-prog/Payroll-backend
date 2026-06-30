@@ -12,6 +12,8 @@ import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
 import { RefreshToken } from './refresh-token.entity';
 import { BlacklistedToken } from './blacklisted-token.entity';
+import { OAuth2Client } from 'google-auth-library';
+import { Role } from '../../common/enums/role.enum';
 
 @Injectable()
 export class AuthService {
@@ -43,11 +45,48 @@ export class AuthService {
       throw new UnauthorizedException('Invalid email or password');
     }
 
+    return this.issueTokens(user);
+  }
+
+  async loginWithGoogle(credential: string) {
+    const clientId = process.env.GOOGLE_CLIENT_ID;
+    if (!clientId) {
+      throw new BadRequestException('Google login is not configured');
+    }
+
+    const client = new OAuth2Client(clientId);
+    const ticket = await client.verifyIdToken({ idToken: credential, audience: clientId });
+    const payload = ticket.getPayload();
+
+    if (!payload?.email) {
+      throw new UnauthorizedException('Google account email not available');
+    }
+
+    const email = payload.email.toLowerCase();
+    let user = await this.usersService.findByEmail(email);
+
+    if (!user) {
+      const tempPassword = crypto.randomBytes(16).toString('hex');
+      const createUserDto: CreateUserDto = {
+        email,
+        password: tempPassword,
+        role: Role.HR,
+      };
+      user = await this.usersService.create(createUserDto);
+    }
+
+    if (user.is_blocked) {
+      throw new UnauthorizedException('Your account has been blocked.');
+    }
+
+    return this.issueTokens(user);
+  }
+
+  private async issueTokens(user: any) {
     const payload = { sub: user.id, email: user.email, role: user.role };
     const accessToken = await this.jwtService.signAsync(payload, { expiresIn: '15m' });
     const refreshToken = await this.jwtService.signAsync(payload, { expiresIn: '7d' });
 
-    // Save refresh token in DB
     const expiresAt = new Date();
     expiresAt.setDate(expiresAt.getDate() + 7);
 

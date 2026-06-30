@@ -1,6 +1,7 @@
 import { Controller, Post, Get, Body, UseGuards, Request, HttpCode, HttpStatus, Patch } from '@nestjs/common';
 import { AuthService } from './auth.service';
 import { LoginDto } from './dto/login.dto';
+import { GoogleLoginDto } from './dto/google-login.dto';
 import { CreateUserDto } from '../users/dto/create-user.dto';
 import { ForgotPasswordDto } from './dto/forgot-password.dto';
 import { ResetPasswordDto } from './dto/reset-password.dto';
@@ -14,6 +15,12 @@ export class AuthController {
   @HttpCode(HttpStatus.OK)
   async login(@Body() loginDto: LoginDto) {
     return this.authService.login(loginDto);
+  }
+
+  @Post('google')
+  @HttpCode(HttpStatus.OK)
+  async googleLogin(@Body() googleLoginDto: GoogleLoginDto) {
+    return this.authService.loginWithGoogle(googleLoginDto.credential);
   }
 
   @Post('forgot-password')

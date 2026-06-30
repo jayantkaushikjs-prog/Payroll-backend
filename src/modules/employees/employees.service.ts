@@ -374,6 +374,23 @@ export class EmployeesService {
     }));
   }
 
+  async generateNextEmployeeCode(): Promise<{ code: string }> {
+    const employees = await this.employeesRepository.find();
+    let maxNum = 0;
+    employees.forEach(emp => {
+      if (emp.employee_code && emp.employee_code.startsWith('EMP')) {
+        const numPart = emp.employee_code.substring(3);
+        const num = parseInt(numPart, 10);
+        if (!isNaN(num) && num > maxNum) {
+          maxNum = num;
+        }
+      }
+    });
+    const nextNum = maxNum + 1;
+    const code = `EMP${String(nextNum).padStart(3, '0')}`;
+    return { code };
+  }
+
   private escapeCsv(value: unknown): string {
     return escapeCsv(value);
   }
@@ -440,10 +457,23 @@ export class EmployeesService {
           if (header === 'employee code' || header === 'employee_code') data.employee_code = val;
           else if (header === 'name') data.name = val;
           else if (header === 'email') data.email = val;
-          else if (header === 'phone') data.phone = val;
+          else if (header === 'personal email' || header === 'personal_email') data.personal_email = val || null;
+          else if (header === 'phone') data.phone = val || null;
           else if (header === 'department') data.department = val;
           else if (header === 'designation') data.designation = val;
-          else if (header === 'joining date' || header === 'joining_date') data.joining_date = val;
+          else if (header === 'joining date' || header === 'joining_date') {
+            if (val) {
+              const matchDmy = val.match(/^(\d{1,2})-(\d{1,2})-(\d{4})$/);
+              if (matchDmy) {
+                const [_, d, m, y] = matchDmy;
+                data.joining_date = `${y}-${m.padStart(2, '0')}-${d.padStart(2, '0')}`;
+              } else {
+                data.joining_date = val;
+              }
+            } else {
+              data.joining_date = val;
+            }
+          }
           else if (header === 'bank name' || header === 'bank_name') data.bank_name = val;
           else if (header === 'account number' || header === 'account_number') data.account_number = val;
           else if (header === 'ifsc') data.ifsc = val;
@@ -461,14 +491,8 @@ export class EmployeesService {
           data.active_status = true;
         }
 
-        if (!data.employee_code || !data.name || !data.email) {
-          errors.push(`Row ${i + 1}: Missing employee_code, name, or email`);
-          continue;
-        }
-
-        const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
-        if (!emailRegex.test(data.email)) {
-          errors.push(`Row ${i + 1}: Invalid email format "${data.email}"`);
+        if (!data.employee_code || !data.name) {
+          errors.push(`Row ${i + 1}: Missing employee_code or name`);
           continue;
         }
 
@@ -476,7 +500,7 @@ export class EmployeesService {
           errors.push(`Row ${i + 1}: Duplicate Employee Code "${data.employee_code}" in CSV`);
           continue;
         }
-        if (csvEmails.has(data.email.toLowerCase())) {
+        if (data.email && csvEmails.has(data.email.toLowerCase())) {
           errors.push(`Row ${i + 1}: Duplicate Email "${data.email}" in CSV`);
           continue;
         }
@@ -486,15 +510,17 @@ export class EmployeesService {
         }
 
         csvEmployeeCodes.add(data.employee_code);
-        csvEmails.add(data.email.toLowerCase());
+        if (data.email) csvEmails.add(data.email.toLowerCase());
         if (data.phone) csvPhones.add(data.phone);
 
         const existingCode = await this.employeesRepository.findOne({ where: { employee_code: data.employee_code } });
 
-        const existingEmail = await this.employeesRepository.findOne({ where: { email: data.email } });
-        if (existingEmail && (!existingCode || existingEmail.id !== existingCode.id)) {
-          errors.push(`Row ${i + 1}: Email "${data.email}" is already taken by another employee`);
-          continue;
+        if (data.email) {
+          const existingEmail = await this.employeesRepository.findOne({ where: { email: data.email } });
+          if (existingEmail && (!existingCode || existingEmail.id !== existingCode.id)) {
+            errors.push(`Row ${i + 1}: Email "${data.email}" is already taken by another employee`);
+            continue;
+          }
         }
 
         if (data.phone) {
@@ -516,7 +542,49 @@ export class EmployeesService {
         errors.push(`Row ${i + 1}: ${err.message || err}`);
       }
     }
+    return { imported: importedCount, errors };
+  }
 
+  async importEmployeesJson(employeesData: any[]): Promise<{ imported: number; errors: string[] }> {
+    const errors: string[] = [];
+    let importedCount = 0;
+
+    for (let i = 0; i < employeesData.length; i++) {
+      try {
+        const data = employeesData[i];
+        if (data.joining_date) {
+          const matchDmy = data.joining_date.match(/^(\d{1,2})-(\d{1,2})-(\d{4})$/);
+          if (matchDmy) {
+            const [_, d, m, y] = matchDmy;
+            data.joining_date = `${y}-${m.padStart(2, '0')}-${d.padStart(2, '0')}`;
+          }
+        }
+
+        if (!data.employee_code || !data.name) {
+          errors.push(`Row ${i + 1}: Missing employee_code or name`);
+          continue;
+        }
+
+        const existingCode = await this.employeesRepository.findOne({ where: { employee_code: data.employee_code } });
+        if (data.email) {
+          const existingEmail = await this.employeesRepository.findOne({ where: { email: data.email } });
+          if (existingEmail && (!existingCode || existingEmail.id !== existingCode.id)) {
+            errors.push(`Row ${i + 1}: Email "${data.email}" is already taken by another employee`);
+            continue;
+          }
+        }
+
+        if (existingCode) {
+          Object.assign(existingCode, data);
+          await this.employeesRepository.save(existingCode);
+        } else {
+          await this.employeesRepository.save(this.employeesRepository.create(data));
+        }
+        importedCount++;
+      } catch (err: any) {
+        errors.push(`Row ${i + 1}: ${err.message || err}`);
+      }
+    }
     return { imported: importedCount, errors };
   }
 

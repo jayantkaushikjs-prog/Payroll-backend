@@ -15,6 +15,9 @@ export class Employee {
   email: string;
 
   @Column({ nullable: true })
+  personal_email: string;
+
+  @Column({ nullable: true })
   phone: string;
 
   @Column()
@@ -66,8 +69,8 @@ export class Employee {
   @Column({ type: 'text', nullable: true })
   other_inputs: string;
 
-  @Column({ type: 'int', default: 30 })
-  no_of_days_present: number;
+  @Column({ type: 'int', nullable: true, default: null })
+  no_of_days_present: number | null;
 
   @Column({ type: 'decimal', precision: 12, scale: 2, default: 0 })
   deduction_absent: number;
