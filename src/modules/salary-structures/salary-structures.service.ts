@@ -58,6 +58,10 @@ export class SalaryStructuresService {
       is_active: true,
     });
 
+    await this.employeesService.update(createSalaryStructureDto.employee_id, {
+      monthly_ctc: ctc,
+    });
+
     return this.salaryStructuresRepository.save(newStructure);
   }
 
