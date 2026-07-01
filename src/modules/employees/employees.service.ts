@@ -97,6 +97,19 @@ export class EmployeesService {
   }
 
   async remove(id: number): Promise<void> {
+    const employee = await this.findOne(id);
+    const pendingAdvance = await this.advanceRepository.findOne({
+      where: { employee_id: id, is_fully_recovered: false },
+    });
+    if (pendingAdvance && Number(pendingAdvance.remaining_amount) > 0.01) {
+      throw new BadRequestException('Cannot archive employee while Advances are pending, Firstly clear all the dues.');
+    }
+
+    const netPayableAmount = Number(employee.monthly_ctc || 0);
+    if (hasPendingEmployeeDeductions(employee, netPayableAmount)) {
+      throw new BadRequestException('Cannot archive employee while Damages Recovery or Other Deductions exceed the net payable amount. Clear the dues first.');
+    }
+
     await this.employeesRepository.update(id, { deleted_at: new Date(), active_status: false });
   }
 

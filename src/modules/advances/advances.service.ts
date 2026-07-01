@@ -27,7 +27,7 @@ export class AdvancesService {
     }
 
     const { entry_type, ...rest } = createDto;
-    const entryLabel = entry_type === 'manual' ? 'Entry type: manual' : 'Entry type: via payroll';
+    const entryLabel = entry_type === 'manual';
     const reasonText = [rest.reason, entryLabel].filter(Boolean).join(' | ');
 
     const advance = this.advancesRepository.create({
