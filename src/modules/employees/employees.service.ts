@@ -80,7 +80,7 @@ export class EmployeesService {
 
   async findAll(): Promise<Employee[]> {
     return this.employeesRepository.find({
-      where: { deleted_at: null as any },
+      where: { deleted_at: IsNull() },
       order: { id: 'DESC' },
     });
   }
