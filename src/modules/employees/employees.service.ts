@@ -60,6 +60,22 @@ export class EmployeesService {
       throw new ConflictException('Employee code already exists');
     }
 
+    if (createEmployeeDto.department) {
+      const deptName = createEmployeeDto.department.trim();
+      const exists = await this.departmentRepository.findOne({ where: { name: deptName } });
+      if (!exists) {
+        await this.departmentRepository.save(this.departmentRepository.create({ name: deptName }));
+      }
+    }
+
+    if (createEmployeeDto.designation) {
+      const desigName = createEmployeeDto.designation.trim();
+      const exists = await this.designationRepository.findOne({ where: { name: desigName } });
+      if (!exists) {
+        await this.designationRepository.save(this.designationRepository.create({ name: desigName }));
+      }
+    }
+
     const emailExists = await this.employeesRepository.findOne({
       where: { email: createEmployeeDto.email },
     });
@@ -221,6 +237,22 @@ export class EmployeesService {
     }
 
     const { monthly_ctc, appraisal, appraisal_effective_date, ...rest } = updateEmployeeDto;
+
+    if (updateEmployeeDto.department) {
+      const deptName = updateEmployeeDto.department.trim();
+      const exists = await this.departmentRepository.findOne({ where: { name: deptName } });
+      if (!exists) {
+        await this.departmentRepository.save(this.departmentRepository.create({ name: deptName }));
+      }
+    }
+
+    if (updateEmployeeDto.designation) {
+      const desigName = updateEmployeeDto.designation.trim();
+      const exists = await this.designationRepository.findOne({ where: { name: desigName } });
+      if (!exists) {
+        await this.designationRepository.save(this.designationRepository.create({ name: desigName }));
+      }
+    }
 
     // Capture whether the PF toggle is actually changing, BEFORE Object.assign mutates the entity
     const pfDeductionChanged =

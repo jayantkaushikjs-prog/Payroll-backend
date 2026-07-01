@@ -56,7 +56,7 @@ export class CreateEmployeeDto {
   @Transform(({ value }) => typeof value === 'string' ? value.trim() : value)
   email: string;
 
-  @IsOptional()
+  @IsNotEmpty({ message: 'Personal email address is required' })
   @IsEmail({}, { message: 'Invalid personal email address format' })
   @Transform(({ value }) => typeof value === 'string' ? (value.trim() || undefined) : value)
   personal_email?: string;
