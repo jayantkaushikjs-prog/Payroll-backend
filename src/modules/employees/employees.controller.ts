@@ -87,6 +87,9 @@ export class EmployeesController {
       throw new ForbiddenException('User role information is missing');
     }
     if (user.role === Role.SUPER_ADMIN) {
+      if (req.query.status === 'archived') {
+        return this.employeesService.findArchived();
+      }
       return this.employeesService.findAll();
     }
     const rolePermissions = getRolePermissions(user.role as Role);
@@ -94,6 +97,9 @@ export class EmployeesController {
       rolePermissions.includes(Permission.VIEW_EMPLOYEE) ||
       rolePermissions.includes(Permission.MANAGE_SALARY_STRUCTURES)
     ) {
+      if (req.query.status === 'archived') {
+        return this.employeesService.findArchived();
+      }
       return this.employeesService.findAll();
     }
     throw new ForbiddenException('You do not have permission to view employees');
@@ -206,5 +212,17 @@ export class EmployeesController {
   @RequirePermissions(Permission.CREATE_EMPLOYEE)
   removeDesignation(@Param('id') id: string) {
     return this.employeesService.removeDesignation(+id);
+  }
+
+  @Delete(':id')
+  @RequirePermissions(Permission.DELETE_EMPLOYEE)
+  remove(@Param('id') id: string) {
+    return this.employeesService.remove(+id);
+  }
+
+  @Post(':id/restore')
+  @RequirePermissions(Permission.UPDATE_EMPLOYEE)
+  restore(@Param('id') id: string) {
+    return this.employeesService.restore(+id);
   }
 }

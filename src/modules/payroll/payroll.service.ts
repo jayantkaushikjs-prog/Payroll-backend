@@ -147,7 +147,7 @@ export class PayrollService {
     // Gross = CTC − employerPf − employerEsi
     const gross          = Number((monthlyCtc - employerPf - employerEsi).toFixed(2));
     const othersAllowance = Math.max(0, Number((gross - basic - hra).toFixed(2)));
-    const appliedPt      = monthlyCtc <= 250000 ? 0 : professionalTax;
+    const appliedPt      = (monthlyCtc * 12) <= 250000 ? 0 : professionalTax;
 
     // 2. Non-payable day proration
     const daysInMonth = new Date(year, month, 0).getDate();
@@ -449,6 +449,10 @@ export class PayrollService {
 
         pr.status = 'disbursed';
         await this.payrollRepository.save(pr);
+        
+        if (pr.employee_id) {
+          await this.employeesService.clearHrInputs(pr.employee_id);
+        }
       }
 
     }

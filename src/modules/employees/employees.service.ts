@@ -1,6 +1,6 @@
 import { Injectable, ConflictException, NotFoundException, BadRequestException } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
-import { Between, Repository, LessThanOrEqual } from 'typeorm';
+import { Between, Repository, LessThanOrEqual, Not, IsNull } from 'typeorm';
 import { Employee } from './employee.entity';
 import { Department } from './department.entity';
 import { Designation } from './designation.entity';
@@ -89,6 +89,21 @@ export class EmployeesService {
     return this.employeesRepository.find({ order: { id: 'DESC' } });
   }
 
+  async findArchived(): Promise<Employee[]> {
+    return this.employeesRepository.find({
+      where: { deleted_at: Not(IsNull()) },
+      order: { id: 'DESC' },
+    });
+  }
+
+  async remove(id: number): Promise<void> {
+    await this.employeesRepository.update(id, { deleted_at: new Date(), active_status: false });
+  }
+
+  async restore(id: number): Promise<void> {
+    await this.employeesRepository.update(id, { deleted_at: null, active_status: true });
+  }
+
   async findByCode(code: string): Promise<Employee | null> {
     return this.employeesRepository.findOne({ where: { employee_code: code } });
   }
@@ -155,6 +170,20 @@ export class EmployeesService {
       },
     ];
     return this.hrPreviewReviewRepository.save(review);
+  }
+
+  async clearHrInputs(id: number): Promise<void> {
+    await this.employeesRepository.update(id, {
+      no_of_days_present: null,
+      deduction_absent: 0,
+      appraisal: 0,
+      leave_encashment: 0,
+      late_arrival_deduction: 0,
+      damages_recovery: 0,
+      bonus_incentives: 0,
+      other_deductions: 0,
+      remarks: '',
+    });
   }
 
   async update(id: number, updateEmployeeDto: UpdateEmployeeDto): Promise<Employee> {
@@ -775,7 +804,7 @@ export class EmployeesService {
       const gross = Number((monthlyCtc - employerPf - employerEsi).toFixed(2));
       const employeePf = pfApplicable ? Number(Math.min(basic * pfEmployeeRate, maxPfCap).toFixed(2)) : 0;
       const employeeEsi = esiApplicable ? Number((basic * esiEmployeeRate).toFixed(2)) : 0;
-      const professionalTaxDeduction = monthlyCtc <= 250000 ? 0 : Number(professionalTax.toFixed(2));
+      const professionalTaxDeduction = (monthlyCtc * 12) <= 250000 ? 0 : Number(professionalTax.toFixed(2));
       const lateAbsentDays = Math.floor(Number(employee.late_arrival_deduction || 0) / 3) * 0.5;
       const daysInMonth = new Date(displayYear, displayMonth, 0).getDate();
       const lateArrivalDeduction = Number(((gross / daysInMonth) * lateAbsentDays).toFixed(2));
@@ -848,7 +877,7 @@ export class EmployeesService {
 
         const pf = pfApplicable ? Number(Math.min(payableBasic * pfEmployeeRate, maxPfCap * payrollRatio).toFixed(2)) : 0;
         const esi = esiApplicable ? Number((payableBasic * esiEmployeeRate).toFixed(2)) : 0;
-        const professionalTaxDeduction = monthlyCtc <= 250000 ? 0 : Number(professionalTax.toFixed(2));
+        const professionalTaxDeduction = (monthlyCtc * 12) <= 250000 ? 0 : Number(professionalTax.toFixed(2));
         const lateAbsentDays = Math.floor(Number(employee.late_arrival_deduction || 0) / 3) * 0.5;
         const lateArrivalDeduction = Number(((gross / daysInMonth) * lateAbsentDays).toFixed(2));
         const bonusIncentives = Number(employee.bonus_incentives || 0);

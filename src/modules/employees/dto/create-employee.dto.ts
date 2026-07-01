@@ -58,12 +58,12 @@ export class CreateEmployeeDto {
 
   @IsOptional()
   @IsEmail({}, { message: 'Invalid personal email address format' })
-  @Transform(({ value }) => typeof value === 'string' ? value.trim() : value)
+  @Transform(({ value }) => typeof value === 'string' ? (value.trim() || undefined) : value)
   personal_email?: string;
 
   @IsOptional()
   @IsString()
-  @Transform(({ value }) => typeof value === 'string' ? value.trim() : value)
+  @Transform(({ value }) => typeof value === 'string' ? (value.trim() || undefined) : value)
   @Matches(/^\d{10}$/, { message: 'Phone number must be numeric and exactly 10 digits' })
   phone?: string;
 
