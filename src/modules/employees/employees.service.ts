@@ -407,7 +407,7 @@ export class EmployeesService {
     const employees = await this.employeesRepository.find();
     let maxNum = 0;
     employees.forEach(emp => {
-      if (emp.employee_code && emp.employee_code.startsWith('TS -')) {
+      if (emp.employee_code && emp.employee_code.startsWith('TS')) {
         const numPart = emp.employee_code.substring(4);
         const num = parseInt(numPart, 10);
         if (!isNaN(num) && num > maxNum) {
@@ -416,7 +416,7 @@ export class EmployeesService {
       }
     });
     const nextNum = maxNum + 1;
-    const code = `TS -${String(nextNum).padStart(3, '0')}`;
+    const code = `TS${String(nextNum).padStart(3, '0')}`;
     return { code };
   }
 
