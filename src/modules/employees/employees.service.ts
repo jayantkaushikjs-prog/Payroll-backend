@@ -916,6 +916,10 @@ export class EmployeesService {
       const remainingAnnualTax = Math.max(0, totalAnnualTax - taxDeducted);
       const monthlyTdsRemaining = remainingFullMonths > 0 ? Number((remainingAnnualTax / remainingFullMonths).toFixed(2)) : 0;
 
+      if (employee.tax_deduction !== false) {
+        estimatedMonthlyPayout = Number(Math.max(0, estimatedMonthlyPayout - monthlyTdsRemaining).toFixed(2));
+      }
+
       const projectedAdvanceRemaining = new Map<number, number>();
       advances.forEach((advance) => {
         projectedAdvanceRemaining.set(advance.id, Number(advance.remaining_amount || 0));
