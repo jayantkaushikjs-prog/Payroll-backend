@@ -101,7 +101,7 @@ export class EmployeesService {
   }
 
   async restore(id: number): Promise<void> {
-    await this.employeesRepository.update(id, { deleted_at: null, active_status: true });
+    await this.employeesRepository.update(id, { deleted_at: null, active_status: false });
   }
 
   async findByCode(code: string): Promise<Employee | null> {
