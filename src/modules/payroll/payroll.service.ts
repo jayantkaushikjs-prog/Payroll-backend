@@ -549,7 +549,7 @@ export class PayrollService {
     for (const employee of activeEmployeeList) {
       try {
         const calc = await this.calculateSingleEmployee(employee.id, month, year);
-        taxDeductions += Number(calc.taxDeduction || 0);
+        taxDeductions += Number(calc.taxDeduction || 0) + Number(calc.taxBreakdown?.professionalTax || 0);
         employeePf += Number(calc.pfDeduction || 0);
         employeeEsi += Number(calc.employeeEsiDeduction || 0);
         employerPf += Number(calc.taxBreakdown?.employerPf || 0);
