@@ -27,9 +27,11 @@ export const ESI_WAGE_LIMIT = 21000;
 export const EMPLOYEE_ESI_RATE = 0.0075;
 export const EMPLOYER_ESI_RATE = 0.0325;
 
-export function isPfApplicableForBasic(basicSalary: number, existingPfMember?: boolean): boolean {
-  return existingPfMember === true || basicSalary <= PF_WAGE_LIMIT;
+export function isPfApplicable(ctc: number, existingPfMember?: boolean): boolean {
+  return existingPfMember === true || ctc <= PF_WAGE_LIMIT;
 }
+
+
 
 export function isEsiApplicableForBasic(basicSalary: number): boolean {
   return basicSalary <= ESI_WAGE_LIMIT;
@@ -46,7 +48,7 @@ export function calculateSalaryComponentsFromCtc(input: SalaryComponentInput): S
 
   const basic_salary = Number((basicRatio * ctc).toFixed(2));
   const hra = Number((hraRatio * basic_salary).toFixed(2));
-  const pfApplicable = isPfApplicableForBasic(basic_salary, input.pfDeduction !== false);
+  const pfApplicable = isPfApplicable(ctc, input.pfDeduction !== false);
   const esiApplicable = isEsiApplicableForBasic(basic_salary);
   const employer_pf = pfApplicable ? Number(Math.min(basic_salary * employerContributionRate, maxPfCap).toFixed(2)) : 0;
   const employer_esi = esiApplicable ? Number((basic_salary * employerEsiRate).toFixed(2)) : 0;
@@ -77,7 +79,7 @@ export function calculateSalaryComponentsFromExistingRatios(
 
   const basic_salary = Number((input.basicRatio * ctc).toFixed(2));
   const hra = Number((input.hraRatio * basic_salary).toFixed(2));
-  const pfApplicable = isPfApplicableForBasic(basic_salary, input.pfDeduction !== false);
+  const pfApplicable = isPfApplicable(ctc, input.pfDeduction !== false);
   const esiApplicable = isEsiApplicableForBasic(basic_salary);
   const employer_pf = pfApplicable ? Number(Math.min(basic_salary * employerContributionRate, maxPfCap).toFixed(2)) : 0;
   const employer_esi = esiApplicable ? Number((basic_salary * employerEsiRate).toFixed(2)) : 0;

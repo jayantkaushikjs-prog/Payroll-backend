@@ -21,6 +21,7 @@ import { ExpenseCategory } from './modules/expenses/expense-category.entity';
 import { RefreshToken } from './modules/auth/refresh-token.entity';
 import { BlacklistedToken } from './modules/auth/blacklisted-token.entity';
 import { HrPreviewReview } from './modules/employees/hr-preview-review.entity';
+import { MonthlyEmployeeInput } from './modules/employees/monthly-employee-input.entity';
 
 // Modules
 import { AuthModule } from './modules/auth/auth.module';
@@ -42,7 +43,7 @@ import {
   calculateSalaryComponentsFromCtc,
   EMPLOYEE_ESI_RATE,
   isEsiApplicableForBasic,
-  isPfApplicableForBasic,
+  isPfApplicable,
 } from './modules/salary-structures/utils/salary-components.util';
 
 @Module({
@@ -71,6 +72,7 @@ import {
         RefreshToken,
         BlacklistedToken,
         HrPreviewReview,
+        MonthlyEmployeeInput,
       ],
       synchronize: false, // For development ease. Production should use migrations.
     }),
@@ -91,6 +93,7 @@ import {
       RefreshToken,
       BlacklistedToken,
       HrPreviewReview,
+      MonthlyEmployeeInput,
     ]),
     AuthModule,
     UsersModule,
@@ -255,7 +258,7 @@ export class AppModule implements OnApplicationBootstrap {
         const gross = salaries[i].gross_salary;
         const basic = salaries[i].basic_salary;
         const ctc = salaries[i].ctc;
-        const pf = isPfApplicableForBasic(basic, true) ? Math.min(basic * 0.12, 1800) : 0;
+        const pf = isPfApplicable(ctc, true) ? Math.min(basic * 0.12, 1800) : 0;
         const esi = isEsiApplicableForBasic(basic) ? Number((basic * EMPLOYEE_ESI_RATE).toFixed(2)) : 0;
 
         // Calculate progressive tax on taxable CTC * 12

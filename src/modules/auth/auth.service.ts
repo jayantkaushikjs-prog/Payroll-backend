@@ -66,13 +66,8 @@ export class AuthService {
     let user = await this.usersService.findByEmail(email);
 
     if (!user) {
-      const tempPassword = crypto.randomBytes(16).toString('hex');
-      const createUserDto: CreateUserDto = {
-        email,
-        password: tempPassword,
-        role: Role.HR,
-      };
-      user = await this.usersService.create(createUserDto);
+      // If the user does not exist, throw an unauthorized exception with a friendly message
+      throw new UnauthorizedException('This email is not registered. Please contact your administrator.');
     }
 
     if (user.is_blocked) {

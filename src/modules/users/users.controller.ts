@@ -29,9 +29,15 @@ export class UsersController {
     return this.usersService.remove(+id);
   }
 
-  @Patch(':id/block')
+  @Patch(':id')
   @RequirePermissions(Permission.MANAGE_USERS)
-  toggleBlock(@Param('id') id: string, @Body('is_blocked') isBlocked: boolean) {
-    return this.usersService.toggleBlockStatus(+id, isBlocked);
+  update(@Param('id') id: string, @Body() updateUserDto: any) {
+    return this.usersService.update(+id, updateUserDto);
+  }
+
+  @Post(':id/resend-invitation')
+  @RequirePermissions(Permission.MANAGE_USERS)
+  resendInvitation(@Param('id') id: string) {
+    return this.usersService.resendInvitation(+id);
   }
 }

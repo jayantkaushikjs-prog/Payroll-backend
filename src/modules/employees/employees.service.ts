@@ -1,6 +1,6 @@
 import { Injectable, ConflictException, NotFoundException, BadRequestException } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
-import { Between, Repository, LessThanOrEqual, Not, IsNull } from 'typeorm';
+import { Between, Repository, LessThanOrEqual, Not, IsNull, In } from 'typeorm';
 import { Employee } from './employee.entity';
 import { Department } from './department.entity';
 import { Designation } from './designation.entity';
@@ -11,13 +11,14 @@ import { SalaryStructure } from '../salary-structures/salary-structure.entity';
 import { EmployeeAdvance } from '../advances/employee-advance.entity';
 import { PFSettings } from '../pf/pf-settings.entity';
 import { HrPreviewReview } from './hr-preview-review.entity';
+import { MonthlyEmployeeInput } from './monthly-employee-input.entity';
 import { calculateAnnualTax } from '../../utils/tax-calculator.util';
 import { escapeCsv, parseCsvLine } from '../../common/utils/csv.util';
 import { getFinancialYear } from '../../common/utils/financial-year.util';
 import {
   calculateSalaryComponentsFromExistingRatios,
   isEsiApplicableForBasic,
-  isPfApplicableForBasic,
+  isPfApplicable,
 } from '../salary-structures/utils/salary-components.util';
 import { hasPendingEmployeeDeductions } from './employee-deactivation.util';
 import { shouldIncludeAdvanceForPayrollRecovery } from '../advances/advance-recovery.util';
@@ -28,7 +29,7 @@ const isPfRequiredByMonthlyCtc = (monthlyCtc?: number | string | null): boolean 
   if (!ctc || isNaN(ctc) || ctc <= 0) {
     return false;
   }
-  return ctc * 0.5 <= PF_WAGE_LIMIT;
+  return ctc <= PF_WAGE_LIMIT;
 };
 
 @Injectable()
@@ -50,6 +51,8 @@ export class EmployeesService {
     private designationRepository: Repository<Designation>,
     @InjectRepository(HrPreviewReview)
     private hrPreviewReviewRepository: Repository<HrPreviewReview>,
+    @InjectRepository(MonthlyEmployeeInput)
+    private monthlyInputRepo: Repository<MonthlyEmployeeInput>,
   ) {}
 
   async create(createEmployeeDto: CreateEmployeeDto): Promise<Employee> {
@@ -101,6 +104,63 @@ export class EmployeesService {
     });
   }
 
+  async getPreviewForMonth(month: string): Promise<any[]> {
+    const employees = await this.findAll();
+    const inputs = await this.monthlyInputRepo.find({
+      where: { month },
+    });
+
+    const inputMap = new Map();
+    inputs.forEach(input => inputMap.set(input.employee_id, input));
+
+    return employees.map(emp => {
+      const input = inputMap.get(emp.id);
+      return {
+        ...emp,
+        no_of_days_present: input ? input.no_of_days_present : 30, // Default to 30 or null depending on logic, let's keep frontend defaults
+        deduction_absent: input ? input.deduction_absent : 0,
+        leave_encashment: input ? input.leave_encashment : 0,
+        late_arrival_deduction: input ? input.late_arrival_deduction : 0,
+        damages_recovery: input ? input.damages_recovery : 0,
+        bonus_incentives: input ? input.bonus_incentives : 0,
+        other_deductions: input ? input.other_deductions : 0,
+        remarks: input ? input.remarks : null,
+        other_inputs: input ? input.other_inputs : null,
+        has_monthly_input: !!input, // Help frontend identify if it was explicitly saved
+      };
+    });
+  }
+
+  async updateMonthlyInput(id: number, month: string, data: Partial<MonthlyEmployeeInput>): Promise<MonthlyEmployeeInput> {
+    const employee = await this.findOne(id);
+    if (!employee) throw new NotFoundException('Employee not found');
+
+    let input = await this.monthlyInputRepo.findOne({
+      where: { employee_id: id, month },
+    });
+
+    if (!input) {
+      input = this.monthlyInputRepo.create({
+        employee_id: id,
+        month,
+      });
+    }
+
+    Object.assign(input, {
+      no_of_days_present: data.no_of_days_present,
+      deduction_absent: data.deduction_absent,
+      leave_encashment: data.leave_encashment,
+      late_arrival_deduction: data.late_arrival_deduction,
+      damages_recovery: data.damages_recovery,
+      bonus_incentives: data.bonus_incentives,
+      other_deductions: data.other_deductions,
+      remarks: data.remarks,
+      other_inputs: data.other_inputs,
+    });
+
+    return this.monthlyInputRepo.save(input);
+  }
+
   async findAllIncludingDeleted(): Promise<Employee[]> {
     return this.employeesRepository.find({ order: { id: 'DESC' } });
   }
@@ -131,6 +191,34 @@ export class EmployeesService {
 
   async restore(id: number): Promise<void> {
     await this.employeesRepository.update(id, { deleted_at: null, active_status: false });
+  }
+
+  async hardDelete(id: number): Promise<void> {
+    const employee = await this.employeesRepository.findOne({ where: { id }, withDeleted: true });
+    if (!employee) {
+      throw new NotFoundException(`Employee with ID ${id} not found`);
+    }
+    // Delete payrolls to handle RESTRICT constraint
+    await this.payrollRepository.delete({ employee_id: id });
+    
+    // Delete other related entities
+    await this.salaryStructureRepository.delete({ employee_id: id });
+    await this.advanceRepository.delete({ employee_id: id });
+
+    await this.employeesRepository.delete(id);
+  }
+
+  async hardDeleteAllArchived(): Promise<void> {
+    const archivedEmployees = await this.findArchived();
+    const ids = archivedEmployees.map(emp => emp.id);
+    if (ids.length === 0) return;
+
+    // Delete related records
+    await this.payrollRepository.delete({ employee_id: In(ids) });
+    await this.salaryStructureRepository.delete({ employee_id: In(ids) });
+    await this.advanceRepository.delete({ employee_id: In(ids) });
+
+    await this.employeesRepository.delete(ids);
   }
 
   async findByCode(code: string): Promise<Employee | null> {
@@ -401,8 +489,8 @@ export class EmployeesService {
 
   async countEmployees(): Promise<{ total: number; active: number }> {
     const [total, active] = await Promise.all([
-      this.employeesRepository.count(),
-      this.employeesRepository.count({ where: { active_status: true } }),
+      this.employeesRepository.count({ where: { deleted_at: IsNull() } }),
+      this.employeesRepository.count({ where: { active_status: true, deleted_at: IsNull() } }),
     ]);
 
     return { total, active };
@@ -415,6 +503,7 @@ export class EmployeesService {
     return this.employeesRepository.count({
       where: {
         joining_date: Between(start, end),
+        deleted_at: IsNull(),
       },
     });
   }
@@ -842,7 +931,7 @@ export class EmployeesService {
       const professionalTax = Number(pfSettings?.professional_tax ?? 200);
       const monthlyCtc = Number(displayStructure.ctc) + getAppraisalForMonth(displayYear, displayMonth);
       const basic = Number((monthlyCtc * 0.5).toFixed(2));
-      const pfApplicable = isPfApplicableForBasic(basic, employee.pf_deduction !== false);
+      const pfApplicable = isPfApplicable(Number(employee.monthly_ctc), employee.pf_deduction !== false);
       const esiApplicable = isEsiApplicableForBasic(basic);
       const employerPf = pfApplicable ? Number(Math.min(basic * pfEmployerRate, maxPfCap).toFixed(2)) : 0;
       const employerEsi = esiApplicable ? Number((basic * esiEmployerRate).toFixed(2)) : 0;
@@ -906,7 +995,7 @@ export class EmployeesService {
         const professionalTax = Number(pfSettings?.professional_tax ?? 200);
 
         const basic = Number((monthlyCtc * 0.5).toFixed(2));
-        const pfApplicable = isPfApplicableForBasic(basic, employee.pf_deduction !== false);
+        const pfApplicable = isPfApplicable(Number(employee.monthly_ctc), employee.pf_deduction !== false);
         const esiApplicable = isEsiApplicableForBasic(basic);
         const employerPf = pfApplicable ? Number(Math.min(basic * pfEmployerRate, maxPfCap).toFixed(2)) : 0;
         const employerEsi = esiApplicable ? Number((basic * esiEmployerRate).toFixed(2)) : 0;

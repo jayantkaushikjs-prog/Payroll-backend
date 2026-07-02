@@ -1,4 +1,4 @@
-import { Controller, Get, Post, Body, Param, Put, Delete, UseGuards, Res, Req, Query, ForbiddenException } from '@nestjs/common';
+import { Controller, Get, Post, Body, Patch, Param, Put, Delete, UseGuards, Res, Req, Query, ForbiddenException } from '@nestjs/common';
 import { Response } from 'express';
 import { EmployeesService } from './employees.service';
 import { CreateEmployeeDto } from './dto/create-employee.dto';
@@ -145,6 +145,22 @@ export class EmployeesController {
     return this.employeesService.updatePreviewFinanceRemarks(month, financeRemarks || '', req.user?.email);
   }
 
+  @Get('preview/:month')
+  @RequirePermissions(Permission.VIEW_EMPLOYEE)
+  getPreviewForMonth(@Param('month') month: string) {
+    return this.employeesService.getPreviewForMonth(month);
+  }
+
+  @Patch(':id/preview/:month')
+  @RequirePermissions(Permission.UPDATE_EMPLOYEE)
+  updateMonthlyInput(
+    @Param('id') id: string,
+    @Param('month') month: string,
+    @Body() data: any,
+  ) {
+    return this.employeesService.updateMonthlyInput(+id, month, data);
+  }
+
   @Get(':id')
   findOne(@Param('id') id: string, @Req() req) {
     const user = req.user;
@@ -212,6 +228,18 @@ export class EmployeesController {
   @RequirePermissions(Permission.CREATE_EMPLOYEE)
   removeDesignation(@Param('id') id: string) {
     return this.employeesService.removeDesignation(+id);
+  }
+
+  @Delete('archived/hard-delete-all')
+  @RequirePermissions(Permission.DELETE_EMPLOYEE)
+  hardDeleteAllArchived() {
+    return this.employeesService.hardDeleteAllArchived();
+  }
+
+  @Delete(':id/hard')
+  @RequirePermissions(Permission.DELETE_EMPLOYEE)
+  hardDelete(@Param('id') id: string) {
+    return this.employeesService.hardDelete(+id);
   }
 
   @Delete(':id')

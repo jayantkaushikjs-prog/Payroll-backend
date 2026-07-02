@@ -15,6 +15,7 @@ import { ExpenseCategory } from '../modules/expenses/expense-category.entity';
 import { RefreshToken } from '../modules/auth/refresh-token.entity';
 import { BlacklistedToken } from '../modules/auth/blacklisted-token.entity';
 import { HrPreviewReview } from '../modules/employees/hr-preview-review.entity';
+import { MonthlyEmployeeInput } from '../modules/employees/monthly-employee-input.entity';
 import * as dotenv from 'dotenv';
 
 dotenv.config();
@@ -43,6 +44,7 @@ export default new DataSource({
     RefreshToken,
     BlacklistedToken,
     HrPreviewReview,
+    MonthlyEmployeeInput,
   ],
   migrations: ['src/migrations/*.ts', 'src/database/migrations/*.ts'],
   synchronize: false,

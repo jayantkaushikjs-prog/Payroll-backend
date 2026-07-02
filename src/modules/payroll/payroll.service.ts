@@ -17,7 +17,7 @@ import {
 import {
   calculateSalaryComponentsFromCtc,
   isEsiApplicableForBasic,
-  isPfApplicableForBasic,
+  isPfApplicable,
 } from '../salary-structures/utils/salary-components.util';
 import { shouldIncludeAdvanceForPayrollRecovery } from '../advances/advance-recovery.util';
 
@@ -136,7 +136,7 @@ export class PayrollService {
     const basic = Number((monthlyCtc * 0.5).toFixed(2));
     const hra   = Number((basic * 0.4).toFixed(2));
 
-    const pfApplicable  = isPfApplicableForBasic(basic, employee.pf_deduction !== false);
+    const pfApplicable  = isPfApplicable(Number(employee.monthly_ctc), employee.pf_deduction !== false);
     const esiApplicable = isEsiApplicableForBasic(basic);
 
     const employerPf  = pfApplicable  ? Number(Math.min(basic * pfEmployerRate,  maxPfCap).toFixed(2)) : 0;

@@ -93,6 +93,86 @@ export class UsersService {
     return saved;
   }
 
+  // Update user details
+  async update(id: number, updateUserDto: any): Promise<User> {
+    const user = await this.findById(id);
+    if (!user) {
+      throw new NotFoundException('User not found');
+    }
+    if (updateUserDto.email) {
+      user.email = updateUserDto.email;
+    }
+    if (updateUserDto.role) {
+      user.role = updateUserDto.role;
+    }
+    if (updateUserDto.password) {
+      const hashed = await bcrypt.hash(updateUserDto.password, 10);
+      user.password = hashed;
+    }
+    const saved = await this.usersRepository.save(user);
+    delete saved.password;
+    return saved;
+  }
+  async resendInvitation(id: number): Promise<void> {
+    const user = await this.findById(id);
+    if (!user) {
+      throw new NotFoundException('User not found');
+    }
+
+    // Generate a secure reset token
+    const crypto = require('crypto');
+    const resetToken = crypto.randomBytes(32).toString('hex');
+    const hashedToken = crypto.createHash('sha256').update(resetToken).digest('hex');
+    
+    // Set expiry to 24 hours from now
+    const expires = new Date();
+    expires.setHours(expires.getHours() + 24);
+
+    user.reset_token = hashedToken;
+    user.reset_token_expires = expires;
+    await this.usersRepository.save(user);
+
+    // Send invitation email
+    const sendGridApiKey = process.env.SENDGRID_API_KEY || process.env.SMTP_PASS || '';
+    const sendGridFrom = process.env.SENDGRID_FROM_EMAIL || process.env.SMTP_FROM || 'no-reply@payroll.com';
+    const clientUrl = process.env.CLIENT_URL || 'http://localhost:5173'; // Fallback
+    const resetLink = `${clientUrl}/reset-password?token=${resetToken}&email=${user.email}`;
+
+    const mailOptions = {
+      to: user.email,
+      subject: 'TH-PMS - Password Reset / Invitation',
+      text: `Hello,\n\nYou have been invited to access TH-PMS, or a password reset was requested. Please use the link below to set your password:\n${resetLink}\n\nThis link will expire in 24 hours.\n\nBest regards,\nTH-PMS Team`,
+      html: `
+        <div style="font-family: Arial, sans-serif; padding: 20px; color: #333; max-width: 500px; margin: auto; border: 1px solid #e2e8f0; border-radius: 8px; text-align: center;">
+          <h2 style="color: #6366f1; margin-top: 0; border-bottom: 1px solid #e2e8f0; padding-bottom: 10px;">TH-PMS Account Access</h2>
+          <div style="text-align: left; padding: 10px 0;">
+            <p>Hello,</p>
+            <p>You have been invited to access TH-PMS, or a password reset was requested.</p>
+            <p>Please click the button below to securely set your password. This link will expire in 24 hours.</p>
+            <div style="text-align: center; margin: 30px 0;">
+              <a href="${resetLink}" style="background-color: #6366f1; color: white; padding: 12px 24px; text-decoration: none; border-radius: 4px; font-weight: bold;">Set Password</a>
+            </div>
+            <p style="font-size: 12px; color: #6b7280; margin-top: 20px;">If the button above does not work, copy and paste this link into your browser:<br>${resetLink}</p>
+          </div>
+        </div>
+      `,
+    };
+
+    try {
+      await sendMail(
+        {
+          auth: sendGridApiKey ? { user: '', pass: sendGridApiKey } : undefined,
+          from: sendGridFrom,
+        },
+        mailOptions,
+      );
+      console.log(`[Resend Invitation] Email sent successfully to ${user.email}`);
+    } catch (err: any) {
+      console.error(`[Resend Invitation Error] Failed to send email to ${user.email}:`, err.message || err);
+      throw new BadRequestException('Failed to send invitation email');
+    }
+  }
+
   async findByEmail(email: string): Promise<User | null> {
     return this.usersRepository
       .createQueryBuilder('user')
