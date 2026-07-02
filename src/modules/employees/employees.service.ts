@@ -1,6 +1,6 @@
 import { Injectable, ConflictException, NotFoundException, BadRequestException } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
-import { Between, Repository, LessThanOrEqual, Not, IsNull, In } from 'typeorm';
+import { Between, Repository, LessThanOrEqual, LessThan, Not, IsNull, In } from 'typeorm';
 import { Employee } from './employee.entity';
 import { Department } from './department.entity';
 import { Designation } from './designation.entity';
@@ -110,13 +110,66 @@ export class EmployeesService {
       where: { month },
     });
 
+    const [year, monthNum] = month.split('-').map(Number);
+    const daysInMonth = new Date(year, monthNum, 0).getDate();
+    const monthStartStr = `${month}-01`;
+    const monthEndStr = `${month}-${daysInMonth}`;
+
+    // Fetch all salary structures effective in this month
+    const structures = await this.salaryStructureRepository.find({
+      where: {
+        effective_from: Between(monthStartStr, monthEndStr),
+      },
+      order: { effective_from: 'ASC' },
+    });
+
     const inputMap = new Map();
     inputs.forEach(input => inputMap.set(input.employee_id, input));
 
-    return employees.map(emp => {
+    // Map structures by employee
+    const structureMap = new Map<number, SalaryStructure[]>();
+    structures.forEach(s => {
+      if (!structureMap.has(s.employee_id)) {
+        structureMap.set(s.employee_id, []);
+      }
+      structureMap.get(s.employee_id).push(s);
+    });
+
+    return Promise.all(employees.map(async emp => {
       const input = inputMap.get(emp.id);
+
+      // Calculate appraisal dynamically by finding the salary structures effective in this month
+      let appraisal = 0;
+      let appraisalEffectiveDate: string | null = null;
+
+      const empStructures = structureMap.get(emp.id) || [];
+      if (empStructures.length > 0) {
+        // If there are multiple structures in this month, the appraisal is the difference between the latest and the oldest
+        const latestStructure = empStructures[empStructures.length - 1];
+        let baseStructure: SalaryStructure | null = null;
+
+        if (empStructures.length > 1) {
+          baseStructure = empStructures[0];
+        } else {
+          baseStructure = await this.salaryStructureRepository.findOne({
+            where: {
+              employee_id: emp.id,
+              effective_from: LessThan(latestStructure.effective_from),
+            },
+            order: { effective_from: 'DESC' },
+          });
+        }
+
+        if (baseStructure) {
+          appraisal = Math.max(0, Number(latestStructure.ctc) - Number(baseStructure.ctc));
+          appraisalEffectiveDate = latestStructure.effective_from;
+        }
+      }
+
       return {
         ...emp,
+        appraisal: appraisal > 0 ? appraisal : 0,
+        appraisal_effective_date: appraisalEffectiveDate,
         no_of_days_present: input ? input.no_of_days_present : null, // Default to null so frontend falls back to dynamic defaults
         deduction_absent: input ? input.deduction_absent : 0,
         leave_encashment: input ? input.leave_encashment : 0,
@@ -128,7 +181,7 @@ export class EmployeesService {
         other_inputs: input ? input.other_inputs : null,
         has_monthly_input: !!input, // Help frontend identify if it was explicitly saved
       };
-    });
+    }));
   }
 
   async updateMonthlyInput(id: number, month: string, data: Partial<MonthlyEmployeeInput>): Promise<MonthlyEmployeeInput> {
