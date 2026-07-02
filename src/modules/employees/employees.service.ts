@@ -1338,10 +1338,30 @@ export class EmployeesService {
   }
 
   async removeDepartment(id: number): Promise<void> {
+    const department = await this.departmentRepository.findOne({ where: { id } });
+    if (!department) {
+      throw new NotFoundException('Department not found');
+    }
+    const count = await this.employeesRepository.count({
+      where: { department: department.name, deleted_at: IsNull() },
+    });
+    if (count > 0) {
+      throw new BadRequestException('Cannot delete department because it is mapped to one or more employees');
+    }
     await this.departmentRepository.delete(id);
   }
 
   async removeDesignation(id: number): Promise<void> {
+    const designation = await this.designationRepository.findOne({ where: { id } });
+    if (!designation) {
+      throw new NotFoundException('Designation not found');
+    }
+    const count = await this.employeesRepository.count({
+      where: { designation: designation.name, deleted_at: IsNull() },
+    });
+    if (count > 0) {
+      throw new BadRequestException('Cannot delete designation because it is mapped to one or more employees');
+    }
     await this.designationRepository.delete(id);
   }
 }
