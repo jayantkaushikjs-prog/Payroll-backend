@@ -400,14 +400,48 @@ export class EmployeesService {
       updateEmployeeDto.pf_deduction !== undefined &&
       updateEmployeeDto.pf_deduction !== employee.pf_deduction;
 
-    // Determine if this is an appraisal increment
+    // Determine if this is an appraisal increment or update
     let newCtc: number | undefined;
     let effectiveDate: string | undefined;
+    let shouldDeleteAppraisalStructure = false;
+    let previousStructureToReactivate: SalaryStructure | null = null;
+
     if (appraisal !== undefined && appraisal_effective_date) {
       const increment = Number(appraisal);
-      const currentCtc = Number(employee.monthly_ctc || 0);
-      newCtc = currentCtc + increment;
-      effectiveDate = appraisal_effective_date;
+      const effectiveFrom = appraisal_effective_date;
+
+      const existingStructure = await this.salaryStructureRepository.findOne({
+        where: { employee_id: employee.id, effective_from: effectiveFrom },
+      });
+
+      const prevStructure = await this.salaryStructureRepository.findOne({
+        where: {
+          employee_id: employee.id,
+          effective_from: LessThan(effectiveFrom),
+        },
+        order: { effective_from: 'DESC' },
+      });
+
+      const baseCtc = prevStructure ? Number(prevStructure.ctc) : Number(employee.monthly_ctc || 0);
+      const targetCtc = baseCtc + increment;
+
+      if (existingStructure) {
+        if (targetCtc !== Number(employee.monthly_ctc)) {
+          if (increment === 0) {
+            shouldDeleteAppraisalStructure = true;
+            previousStructureToReactivate = prevStructure;
+            newCtc = baseCtc;
+          } else {
+            newCtc = targetCtc;
+            effectiveDate = effectiveFrom;
+          }
+        }
+      } else {
+        if (increment > 0) {
+          newCtc = targetCtc;
+          effectiveDate = effectiveFrom;
+        }
+      }
     }
 
     // Apply regular monthly CTC update if provided and not an appraisal
@@ -456,7 +490,23 @@ export class EmployeesService {
         saved.pf_deduction = true;
       }
       await this.employeesRepository.save(saved);
-      await this.syncSalaryStructureFromMonthlyCtc(saved, newCtc, effectiveDate);
+
+      if (shouldDeleteAppraisalStructure) {
+        await this.salaryStructureRepository.delete({
+          employee_id: saved.id,
+          effective_from: appraisal_effective_date,
+        });
+
+        if (previousStructureToReactivate) {
+          await this.salaryStructureRepository.update(
+            { id: previousStructureToReactivate.id },
+            { is_active: true }
+          );
+        }
+      } else {
+        await this.syncSalaryStructureFromMonthlyCtc(saved, newCtc, effectiveDate);
+      }
+
       saved.appraisal = 0;
       saved.appraisal_effective_date = null;
       await this.employeesRepository.save(saved);
