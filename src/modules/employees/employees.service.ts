@@ -117,7 +117,7 @@ export class EmployeesService {
       const input = inputMap.get(emp.id);
       return {
         ...emp,
-        no_of_days_present: input ? input.no_of_days_present : 30, // Default to 30 or null depending on logic, let's keep frontend defaults
+        no_of_days_present: input ? input.no_of_days_present : null, // Default to null so frontend falls back to dynamic defaults
         deduction_absent: input ? input.deduction_absent : 0,
         leave_encashment: input ? input.leave_encashment : 0,
         late_arrival_deduction: input ? input.late_arrival_deduction : 0,
