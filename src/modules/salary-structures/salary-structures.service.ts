@@ -78,7 +78,7 @@ export class SalaryStructuresService {
   async findHistoryByEmployee(employeeId: number): Promise<SalaryStructure[]> {
     return this.salaryStructuresRepository.find({
       where: { employee_id: employeeId },
-      order: { effective_from: 'DESC', created_at: 'DESC' },
+      order: { created_at: 'DESC', effective_from: 'DESC' },
     });
   }
 
