@@ -1073,11 +1073,11 @@ export class EmployeesService {
       const basic = Number((monthlyCtc * 0.5).toFixed(2));
       const pfApplicable = isPfApplicable(Number(employee.monthly_ctc), employee.pf_deduction !== false);
       const esiApplicable = isEsiApplicableForBasic(basic);
-      const employerPf = pfApplicable ? Number(Math.min(monthlyCtc * pfEmployerRate, maxPfCap).toFixed(2)) : 0;
-      const employerEsi = esiApplicable ? Number((monthlyCtc * esiEmployerRate).toFixed(2)) : 0;
+      const employerPf = pfApplicable ? Number(Math.min(basic * pfEmployerRate, maxPfCap).toFixed(2)) : 0;
+      const employerEsi = esiApplicable ? Number((basic * esiEmployerRate).toFixed(2)) : 0;
       const gross = Number((monthlyCtc - employerPf - employerEsi).toFixed(2));
-      const employeePf = pfApplicable ? Number(Math.min(monthlyCtc * pfEmployeeRate, maxPfCap).toFixed(2)) : 0;
-      const employeeEsi = esiApplicable ? Number((monthlyCtc * esiEmployeeRate).toFixed(2)) : 0;
+      const employeePf = pfApplicable ? Number(Math.min(basic * pfEmployeeRate, maxPfCap).toFixed(2)) : 0;
+      const employeeEsi = esiApplicable ? Number((basic * esiEmployeeRate).toFixed(2)) : 0;
       const professionalTaxDeduction = (monthlyCtc * 12) <= 250000 ? 0 : Number(professionalTax.toFixed(2));
       const lateAbsentDays = Number(employee.late_arrival_deduction || 0) < 3 ? 0 : (Number(employee.late_arrival_deduction || 0) / 3) * 0.5;
       const daysInMonth = new Date(displayYear, displayMonth, 0).getDate();
@@ -1137,8 +1137,8 @@ export class EmployeesService {
         const basic = Number((monthlyCtc * 0.5).toFixed(2));
         const pfApplicable = isPfApplicable(Number(employee.monthly_ctc), employee.pf_deduction !== false);
         const esiApplicable = isEsiApplicableForBasic(basic);
-        const employerPf = pfApplicable ? Number(Math.min(monthlyCtc * pfEmployerRate, maxPfCap).toFixed(2)) : 0;
-        const employerEsi = esiApplicable ? Number((monthlyCtc * esiEmployerRate).toFixed(2)) : 0;
+        const employerPf = pfApplicable ? Number(Math.min(basic * pfEmployerRate, maxPfCap).toFixed(2)) : 0;
+        const employerEsi = esiApplicable ? Number((basic * esiEmployerRate).toFixed(2)) : 0;
         const gross = Number((monthlyCtc - employerPf - employerEsi).toFixed(2));
 
         const consoleAbsentDays = Number(employee.deduction_absent || 0);
@@ -1149,10 +1149,9 @@ export class EmployeesService {
         const payableGross = Number((gross * payrollRatio).toFixed(2));
         const nonPayableDeduction = Number((gross - payableGross).toFixed(2));
         const payableBasic = Number((basic * payrollRatio).toFixed(2));
-        const payableCtc = Number((monthlyCtc * payrollRatio).toFixed(2));
 
-        const pf = pfApplicable ? Number(Math.min(payableCtc * pfEmployeeRate, maxPfCap * payrollRatio).toFixed(2)) : 0;
-        const esi = esiApplicable ? Number((payableCtc * esiEmployeeRate).toFixed(2)) : 0;
+        const pf = pfApplicable ? Number(Math.min(payableBasic * pfEmployeeRate, maxPfCap * payrollRatio).toFixed(2)) : 0;
+        const esi = esiApplicable ? Number((payableBasic * esiEmployeeRate).toFixed(2)) : 0;
         const professionalTaxDeduction = (monthlyCtc * 12) <= 250000 ? 0 : Number(professionalTax.toFixed(2));
         const lateAbsentDays = Number(employee.late_arrival_deduction || 0) < 3 ? 0 : (Number(employee.late_arrival_deduction || 0) / 3) * 0.5;
         const lateArrivalDeduction = Number(((gross / daysInMonth) * lateAbsentDays).toFixed(2));

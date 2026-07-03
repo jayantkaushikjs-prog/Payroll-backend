@@ -145,10 +145,10 @@ export class PayrollService {
     const pfApplicable  = isPfApplicable(Number(employee.monthly_ctc), employee.pf_deduction !== false);
     const esiApplicable = isEsiApplicableForBasic(basic);
 
-    const employerPf  = pfApplicable  ? Number(Math.min(monthlyCtc * pfEmployerRate,  maxPfCap).toFixed(2)) : 0;
-    const employerEsi = esiApplicable ? Number((monthlyCtc * esiEmployerRate).toFixed(2)) : 0;
-    const employeePf  = pfApplicable  ? Number(Math.min(monthlyCtc * pfEmployeeRate,  maxPfCap).toFixed(2)) : 0;
-    const employeeEsi = esiApplicable ? Number((monthlyCtc * esiEmployeeRate).toFixed(2)) : 0;
+    const employerPf  = pfApplicable  ? Number(Math.min(basic * pfEmployerRate,  maxPfCap).toFixed(2)) : 0;
+    const employerEsi = esiApplicable ? Number((basic * esiEmployerRate).toFixed(2)) : 0;
+    const employeePf  = pfApplicable  ? Number(Math.min(basic * pfEmployeeRate,  maxPfCap).toFixed(2)) : 0;
+    const employeeEsi = esiApplicable ? Number((basic * esiEmployeeRate).toFixed(2)) : 0;
 
     // Gross = CTC − employerPf − employerEsi
     const gross          = Number((monthlyCtc - employerPf - employerEsi).toFixed(2));
@@ -168,21 +168,20 @@ export class PayrollService {
     const payableDays = daysInMonth - totalNpd;
     const prorateRatio = daysInMonth > 0 ? payableDays / daysInMonth : 1;
 
-    // Prorated values (Calculated from CTC per requested policy)
+    // Prorated values
     const nonPayableDeduction = Number(((gross / daysInMonth) * totalNpd).toFixed(2));
     const payableGross  = Math.max(0, Number((gross - nonPayableDeduction).toFixed(2)));
-    const payableBasic  = Number((basic  * prorateRatio).toFixed(2));
-    const payableCtc    = Number((monthlyCtc * prorateRatio).toFixed(2));
+    const payableBasic  = Number((basic * prorateRatio).toFixed(2));
 
     // Prorated deductions
-    const pfDeduction         = Number(Math.min(payableCtc * pfEmployeeRate,  maxPfCap * prorateRatio).toFixed(2));
-    const employeeEsiDeduction = esiApplicable ? Number((payableCtc * esiEmployeeRate).toFixed(2)) : 0;
+    const pfDeduction         = Number(Math.min(payableBasic * pfEmployeeRate,  maxPfCap * prorateRatio).toFixed(2));
+    const employeeEsiDeduction = esiApplicable ? Number((payableBasic * esiEmployeeRate).toFixed(2)) : 0;
     const pfDeductionFinal    = pfApplicable ? pfDeduction : 0;
     const ptDeduction         = appliedPt > 0 ? Number(appliedPt.toFixed(2)) : 0;
     
     // Prorated Employer contributions
-    const employerPfFinal     = pfApplicable ? Number(Math.min(payableCtc * pfEmployerRate, maxPfCap * prorateRatio).toFixed(2)) : 0;
-    const employerEsiFinal    = esiApplicable ? Number((payableCtc * esiEmployerRate).toFixed(2)) : 0;
+    const employerPfFinal     = pfApplicable ? Number(Math.min(payableBasic * pfEmployerRate, maxPfCap * prorateRatio).toFixed(2)) : 0;
+    const employerEsiFinal    = esiApplicable ? Number((payableBasic * esiEmployerRate).toFixed(2)) : 0;
 
     // Additional Components
     const lateAbsentDays = Number(employee.late_arrival_deduction || 0) < 3 ? 0 : (Number(employee.late_arrival_deduction || 0) / 3) * 0.5;
