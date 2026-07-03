@@ -132,6 +132,13 @@ export class EmployeesService {
     const monthStartStr = `${month}-01`;
     const monthEndStr = `${month}-${daysInMonth}`;
 
+    // Current date for auto-inactivation checks
+    const today = new Date();
+    today.setHours(0, 0, 0, 0);
+
+    const selectedMonthStart = new Date(year, monthNum - 1, 1);
+    const selectedMonthEnd = new Date(year, monthNum, 0);
+
     // Check if payroll for the target month has been disbursed; if so,
     // the preview sheet should be locked for that month (no edits allowed).
     const payrollDisbursed = await this.payrollRepository.findOne({
@@ -159,7 +166,62 @@ export class EmployeesService {
       structureMap.get(s.employee_id).push(s);
     });
 
-    return Promise.all(employees.map(async emp => {
+    // Fetch all active advances to check pending dues
+    const activeAdvances = await this.advanceRepository.find({
+      where: { is_fully_recovered: false },
+    });
+    const advanceByEmployee = new Map<number, number>();
+    activeAdvances.forEach(adv => {
+      const cur = advanceByEmployee.get(adv.employee_id) || 0;
+      advanceByEmployee.set(adv.employee_id, cur + Number(adv.remaining_amount || 0));
+    });
+
+    const results: any[] = [];
+
+    for (const emp of employees) {
+      const joining = emp.joining_date ? new Date(emp.joining_date) : null;
+      const relieving = emp.relieving_date ? new Date(emp.relieving_date) : null;
+
+      // --- 1. Skip employees who have not joined yet as of the preview month ---
+      if (joining) {
+        const joiningDay = new Date(joining.getFullYear(), joining.getMonth(), joining.getDate());
+        if (joiningDay > selectedMonthEnd) {
+          // Employee hasn't joined by end of selected month — skip
+          continue;
+        }
+      }
+
+      // --- 2. Skip employees who are fully relieved (relieving date is BEFORE the selected month) ---
+      if (relieving) {
+        const relievingDay = new Date(relieving.getFullYear(), relieving.getMonth(), relieving.getDate());
+        if (relievingDay < selectedMonthStart) {
+          // Relieving date was before the selected month — they are already gone
+
+          // --- 3. Auto-inactivate if payroll for the relieving month was disbursed and no pending dues ---
+          const relievingMonthNum = relieving.getMonth() + 1;
+          const relievingYear = relieving.getFullYear();
+          const relievingMonthPayroll = await this.payrollRepository.findOne({
+            where: { month: relievingMonthNum, year: relievingYear, status: 'disbursed' },
+          });
+
+          if (relievingMonthPayroll) {
+            const input = inputMap.get(emp.id);
+            const pendingAdvances = advanceByEmployee.get(emp.id) || 0;
+            const pendingDamages = Number(emp.damages_recovery || 0);
+            const pendingOther = Number(emp.other_deductions || 0);
+            const inputDamages = input ? Number(input.damages_recovery || 0) : 0;
+            const inputOther = input ? Number(input.other_deductions || 0) : 0;
+            const totalPendingDues = pendingAdvances + pendingDamages + pendingOther + inputDamages + inputOther;
+
+            if (totalPendingDues === 0) {
+              // Relieving month payroll disbursed + no pending dues → safe to auto-inactivate
+              await this.employeesRepository.update(emp.id, { active_status: false });
+            }
+          }
+          continue; // Always skip from preview
+        }
+      }
+
       const input = inputMap.get(emp.id);
 
       // Read appraisal from monthly input instead of calculating dynamically
@@ -171,11 +233,6 @@ export class EmployeesService {
       // falls within the preview month, treat them as "relieved" for that month
       // (this prevents UI from showing them as 'relieving' and avoids any
       // relieving-date-triggered status changes while the month is locked).
-      const joining = emp.joining_date ? new Date(emp.joining_date) : null;
-      const relieving = emp.relieving_date ? new Date(emp.relieving_date) : null;
-      const selectedMonthStart = new Date(year, monthNum - 1, 1);
-      const selectedMonthEnd = new Date(year, monthNum, 0);
-
       let preview_status = 'old';
       let preview_relief_locked = false;
 
@@ -192,7 +249,7 @@ export class EmployeesService {
         else preview_status = 'old';
       }
 
-      return {
+      results.push({
         ...emp,
         preview_locked: previewLocked,
         preview_status,
@@ -209,8 +266,10 @@ export class EmployeesService {
         remarks: input ? input.remarks : null,
         other_inputs: input ? input.other_inputs : null,
         has_monthly_input: !!input, // Help frontend identify if it was explicitly saved
-      };
-    }));
+      });
+    }
+
+    return results;
   }
 
   async updateMonthlyInput(id: number, month: string, data: Partial<MonthlyEmployeeInput>): Promise<MonthlyEmployeeInput> {

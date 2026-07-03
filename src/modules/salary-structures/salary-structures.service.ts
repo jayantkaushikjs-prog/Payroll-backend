@@ -56,6 +56,8 @@ export class SalaryStructuresService {
       special_allowance: components.special_allowance,
       other_allowance: components.other_allowance,
       gross_salary: components.gross_salary,
+      employer_pf: components.employer_pf,
+      employer_esi: components.employer_esi,
       ctc,
       effective_from: createSalaryStructureDto.effective_from,
       is_active: true,

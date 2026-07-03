@@ -29,6 +29,12 @@ export class SalaryStructure {
   gross_salary: number;
 
   @Column({ type: 'decimal', precision: 12, scale: 2, default: 0 })
+  employer_pf: number;
+
+  @Column({ type: 'decimal', precision: 12, scale: 2, default: 0 })
+  employer_esi: number;
+
+  @Column({ type: 'decimal', precision: 12, scale: 2, default: 0 })
   ctc: number;
 
   @Column({ default: true })
