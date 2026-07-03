@@ -10,7 +10,7 @@ import {
   Length,
   IsNumber,
 } from 'class-validator';
-import { Transform } from 'class-transformer';
+import { Transform, Type } from 'class-transformer';
 
 const DEPARTMENTS = [
   'Human Resources (HR)',
@@ -128,10 +128,12 @@ export class CreateEmployeeDto {
   tax_deduction?: boolean;
 
   @IsOptional()
+  @Type(() => Number)
   @IsNumber({}, { message: 'Monthly CTC must be a number' })
   monthly_ctc?: number;
 
   @IsOptional()
+  @Type(() => Number)
   @IsNumber({}, { message: 'Annual CTC must be a number' })
   annual_ctc?: number;
 
@@ -144,14 +146,17 @@ export class CreateEmployeeDto {
   other_inputs?: string;
 
   @IsOptional()
+  @Type(() => Number)
   @IsNumber({}, { message: 'Number of days present must be a number' })
   no_of_days_present?: number;
 
   @IsOptional()
+  @Type(() => Number)
   @IsNumber({}, { message: 'Deduction (Absent) must be a number' })
   deduction_absent?: number;
 
   @IsOptional()
+  @Type(() => Number)
   @IsNumber({}, { message: 'Appraisal must be a number' })
   appraisal?: number;
 
@@ -160,22 +165,27 @@ export class CreateEmployeeDto {
   appraisal_effective_date?: string;
 
   @IsOptional()
+  @Type(() => Number)
   @IsNumber({}, { message: 'Leave Encashment must be a number' })
   leave_encashment?: number;
 
   @IsOptional()
+  @Type(() => Number)
   @IsNumber({}, { message: 'Late Arrival Deduction must be a number' })
   late_arrival_deduction?: number;
 
   @IsOptional()
+  @Type(() => Number)
   @IsNumber({}, { message: 'Damages Recovery must be a number' })
   damages_recovery?: number;
 
   @IsOptional()
+  @Type(() => Number)
   @IsNumber({}, { message: 'Bonus / Incentives must be a number' })
   bonus_incentives?: number;
 
   @IsOptional()
+  @Type(() => Number)
   @IsNumber({}, { message: 'Other Deductions must be a number' })
   other_deductions?: number;
 

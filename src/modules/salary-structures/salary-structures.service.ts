@@ -3,6 +3,7 @@ import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
 import { SalaryStructure } from './salary-structure.entity';
 import { CreateSalaryStructureDto } from './dto/create-salary-structure.dto';
+import { Employee } from '../employees/employee.entity';
 import { EmployeesService } from '../employees/employees.service';
 import { PFService } from '../pf/pf.service';
 import { parseCsvLine } from '../../common/utils/csv.util';
@@ -13,6 +14,8 @@ export class SalaryStructuresService {
   constructor(
     @InjectRepository(SalaryStructure)
     private salaryStructuresRepository: Repository<SalaryStructure>,
+    @InjectRepository(Employee)
+    private employeesRepository: Repository<Employee>,
     private employeesService: EmployeesService,
     private pfService: PFService,
   ) {}
@@ -58,16 +61,24 @@ export class SalaryStructuresService {
       is_active: true,
     });
 
-    await this.employeesService.update(createSalaryStructureDto.employee_id, {
-      monthly_ctc: ctc,
-    });
+    // Save the structure FIRST, then sync monthly_ctc on the employee record.
+    // IMPORTANT: Use a direct repository update instead of employeesService.update()
+    // to avoid a circular call: update() → syncSalaryStructureFromMonthlyCtc()
+    // → which would create yet another salary structure, causing duplicates.
+    const saved = await this.salaryStructuresRepository.save(newStructure);
 
-    return this.salaryStructuresRepository.save(newStructure);
+    await this.employeesRepository.update(
+      { id: createSalaryStructureDto.employee_id },
+      { monthly_ctc: ctc, annual_ctc: ctc * 12 },
+    );
+
+    return saved;
   }
 
   async findActiveByEmployee(employeeId: number): Promise<SalaryStructure> {
     const structure = await this.salaryStructuresRepository.findOne({
       where: { employee_id: employeeId, is_active: true },
+      order: { id: 'DESC' },
     });
     if (!structure) {
       throw new NotFoundException(`No active salary structure found for employee ID ${employeeId}`);
@@ -76,17 +87,36 @@ export class SalaryStructuresService {
   }
 
   async findHistoryByEmployee(employeeId: number): Promise<SalaryStructure[]> {
-    return this.salaryStructuresRepository.find({
+    const all = await this.salaryStructuresRepository.find({
       where: { employee_id: employeeId },
       order: { created_at: 'DESC', effective_from: 'DESC' },
+    });
+
+    // Defensive dedupe: remove consecutive/identical records that may have
+    // been created due to a race or historical bug (same effective_from and ctc)
+    const seen = new Set<string>();
+    return all.filter((s) => {
+      const key = `${s.employee_id}::${s.effective_from}::${Number(s.ctc)}::${Number(s.basic_salary)}`;
+      if (seen.has(key)) return false;
+      seen.add(key);
+      return true;
     });
   }
 
   async findAllActive(): Promise<SalaryStructure[]> {
-    return this.salaryStructuresRepository.find({
+    const all = await this.salaryStructuresRepository.find({
       where: { is_active: true },
       relations: ['employee'],
       order: { id: 'DESC' },
+    });
+    // Deduplicate: return only the latest active structure per employee
+    // (handles any pre-existing data inconsistency where an employee has
+    // multiple active rows due to the now-fixed circular-save bug)
+    const seen = new Set<number>();
+    return all.filter((s) => {
+      if (!s.employee_id || seen.has(s.employee_id)) return false;
+      seen.add(s.employee_id);
+      return true;
     });
   }
 

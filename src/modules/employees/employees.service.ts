@@ -98,9 +98,17 @@ export class EmployeesService {
   }
 
   async findAll(): Promise<Employee[]> {
-    return this.employeesRepository.find({
+    const rows = await this.employeesRepository.find({
       where: { deleted_at: IsNull() },
       order: { id: 'DESC' },
+    });
+    // Defensive dedupe: ensure unique employee IDs (protect against any
+    // accidental duplicate rows that may have been created elsewhere).
+    const seen = new Set<number>();
+    return rows.filter(r => {
+      if (seen.has(r.id)) return false;
+      seen.add(r.id);
+      return true;
     });
   }
 
@@ -114,6 +122,13 @@ export class EmployeesService {
     const daysInMonth = new Date(year, monthNum, 0).getDate();
     const monthStartStr = `${month}-01`;
     const monthEndStr = `${month}-${daysInMonth}`;
+
+    // Check if payroll for the target month has been disbursed; if so,
+    // the preview sheet should be locked for that month (no edits allowed).
+    const payrollDisbursed = await this.payrollRepository.findOne({
+      where: { month: monthNum, year, status: 'disbursed' },
+    });
+    const previewLocked = Boolean(payrollDisbursed);
 
     // Fetch all salary structures effective in this month
     const structures = await this.salaryStructureRepository.find({
@@ -138,36 +153,41 @@ export class EmployeesService {
     return Promise.all(employees.map(async emp => {
       const input = inputMap.get(emp.id);
 
-      // Calculate appraisal dynamically by finding the salary structures effective in this month
-      let appraisal = 0;
-      let appraisalEffectiveDate: string | null = null;
+      // Read appraisal from monthly input instead of calculating dynamically
+      let appraisal = input ? input.appraisal : 0;
+      let appraisalEffectiveDate = input ? input.appraisal_effective_date : null;
 
-      const empStructures = structureMap.get(emp.id) || [];
-      if (empStructures.length > 0) {
-        // If there are multiple structures in this month, the appraisal is the difference between the latest and the oldest
-        const latestStructure = empStructures[empStructures.length - 1];
-        let baseStructure: SalaryStructure | null = null;
+      // Determine preview status for this employee for the requested month.
+      // If the preview is locked for the month, and the employee's relieving date
+      // falls within the preview month, treat them as "relieved" for that month
+      // (this prevents UI from showing them as 'relieving' and avoids any
+      // relieving-date-triggered status changes while the month is locked).
+      const joining = emp.joining_date ? new Date(emp.joining_date) : null;
+      const relieving = emp.relieving_date ? new Date(emp.relieving_date) : null;
+      const selectedMonthStart = new Date(year, monthNum - 1, 1);
+      const selectedMonthEnd = new Date(year, monthNum, 0);
 
-        if (empStructures.length > 1) {
-          baseStructure = empStructures[0];
-        } else {
-          baseStructure = await this.salaryStructureRepository.findOne({
-            where: {
-              employee_id: emp.id,
-              effective_from: LessThan(latestStructure.effective_from),
-            },
-            order: { effective_from: 'DESC' },
-          });
-        }
+      let preview_status = 'old';
+      let preview_relief_locked = false;
 
-        if (baseStructure) {
-          appraisal = Math.max(0, Number(latestStructure.ctc) - Number(baseStructure.ctc));
-          appraisalEffectiveDate = latestStructure.effective_from;
-        }
+      const dateInSelectedMonth = (d?: Date | null) =>
+        !!d && d.getFullYear() === selectedMonthStart.getFullYear() && d.getMonth() === selectedMonthStart.getMonth();
+
+      if (previewLocked && relieving && dateInSelectedMonth(relieving)) {
+        preview_status = 'relieved';
+        preview_relief_locked = true;
+      } else {
+        if (relieving && dateInSelectedMonth(relieving)) preview_status = 'relieving';
+        else if (relieving && relieving > selectedMonthEnd) preview_status = 'on_notice';
+        else if (joining && dateInSelectedMonth(joining)) preview_status = 'new';
+        else preview_status = 'old';
       }
 
       return {
         ...emp,
+        preview_locked: previewLocked,
+        preview_status,
+        preview_relief_locked,
         appraisal: appraisal > 0 ? appraisal : 0,
         appraisal_effective_date: appraisalEffectiveDate,
         no_of_days_present: input ? input.no_of_days_present : null, // Default to null so frontend falls back to dynamic defaults
@@ -188,6 +208,14 @@ export class EmployeesService {
     const employee = await this.findOne(id);
     if (!employee) throw new NotFoundException('Employee not found');
 
+    const [year, monthNum] = month.split('-').map(Number);
+    const payrollDisbursed = await this.payrollRepository.findOne({
+      where: { month: monthNum, year, status: 'disbursed' },
+    });
+    if (payrollDisbursed) {
+      throw new BadRequestException('Preview is locked for this month because payroll has already been disbursed');
+    }
+
     let input = await this.monthlyInputRepo.findOne({
       where: { employee_id: id, month },
     });
@@ -199,19 +227,25 @@ export class EmployeesService {
       });
     }
 
-    Object.assign(input, {
-      no_of_days_present: data.no_of_days_present,
-      deduction_absent: data.deduction_absent,
-      leave_encashment: data.leave_encashment,
-      late_arrival_deduction: data.late_arrival_deduction,
-      damages_recovery: data.damages_recovery,
-      bonus_incentives: data.bonus_incentives,
-      other_deductions: data.other_deductions,
-      remarks: data.remarks,
-      other_inputs: data.other_inputs,
-    });
+    if (data.no_of_days_present !== undefined) input.no_of_days_present = data.no_of_days_present;
+    if (data.appraisal !== undefined) input.appraisal = data.appraisal;
+    if (data.appraisal_effective_date !== undefined) input.appraisal_effective_date = data.appraisal_effective_date;
+    if (data.deduction_absent !== undefined) input.deduction_absent = data.deduction_absent;
+    if (data.leave_encashment !== undefined) input.leave_encashment = data.leave_encashment;
+    if (data.late_arrival_deduction !== undefined) input.late_arrival_deduction = data.late_arrival_deduction;
+    if (data.damages_recovery !== undefined) input.damages_recovery = data.damages_recovery;
+    if (data.bonus_incentives !== undefined) input.bonus_incentives = data.bonus_incentives;
+    if (data.other_deductions !== undefined) input.other_deductions = data.other_deductions;
+    if (data.remarks !== undefined) input.remarks = data.remarks;
+    if (data.other_inputs !== undefined) input.other_inputs = data.other_inputs;
 
     return this.monthlyInputRepo.save(input);
+  }
+
+  async getMonthlyInput(id: number, month: string): Promise<MonthlyEmployeeInput | null> {
+    return this.monthlyInputRepo.findOne({
+      where: { employee_id: id, month },
+    });
   }
 
   async findAllIncludingDeleted(): Promise<Employee[]> {
@@ -279,6 +313,9 @@ export class EmployeesService {
   }
 
   async findOne(id: number): Promise<Employee> {
+    if (!Number.isInteger(id) || isNaN(id) || id <= 0) {
+      throw new BadRequestException('Invalid employee id');
+    }
     const employee = await this.employeesRepository.findOne({ where: { id } });
     if (!employee) {
       throw new NotFoundException(`Employee with ID ${id} not found`);
@@ -377,7 +414,7 @@ export class EmployeesService {
       }
     }
 
-    const { monthly_ctc, appraisal, appraisal_effective_date, ...rest } = updateEmployeeDto;
+    const { monthly_ctc, ...rest } = updateEmployeeDto;
 
     if (updateEmployeeDto.department) {
       const deptName = updateEmployeeDto.department.trim();
@@ -400,51 +437,7 @@ export class EmployeesService {
       updateEmployeeDto.pf_deduction !== undefined &&
       updateEmployeeDto.pf_deduction !== employee.pf_deduction;
 
-    // Determine if this is an appraisal increment or update
-    let newCtc: number | undefined;
-    let effectiveDate: string | undefined;
-    let shouldDeleteAppraisalStructure = false;
-    let previousStructureToReactivate: SalaryStructure | null = null;
 
-    if (appraisal !== undefined && appraisal_effective_date) {
-      const increment = Number(appraisal);
-      const effectiveFrom = appraisal_effective_date;
-
-      const existingStructure = await this.salaryStructureRepository.findOne({
-        where: { employee_id: employee.id, effective_from: effectiveFrom },
-      });
-
-      const prevStructure = await this.salaryStructureRepository.findOne({
-        where: {
-          employee_id: employee.id,
-          effective_from: LessThan(effectiveFrom),
-        },
-        order: { effective_from: 'DESC' },
-      });
-
-      const baseCtc = prevStructure ? Number(prevStructure.ctc) : Number(employee.monthly_ctc || 0);
-      const targetCtc = baseCtc + increment;
-
-      if (existingStructure) {
-        if (targetCtc !== Number(employee.monthly_ctc)) {
-          if (increment === 0) {
-            shouldDeleteAppraisalStructure = true;
-            previousStructureToReactivate = prevStructure;
-            newCtc = baseCtc;
-          } else {
-            newCtc = targetCtc;
-            effectiveDate = effectiveFrom;
-          }
-        }
-      } else {
-        if (increment > 0) {
-          newCtc = targetCtc;
-          effectiveDate = effectiveFrom;
-        }
-      }
-    }
-
-    // Apply regular monthly CTC update if provided and not an appraisal
     if (monthly_ctc !== undefined) {
       employee.monthly_ctc = Number(monthly_ctc);
     }
@@ -459,11 +452,22 @@ export class EmployeesService {
 
     const today = new Date();
     today.setHours(0, 0, 0, 0);
-    const shouldAutoDeactivate = Boolean(employee.relieving_date && (() => {
+    let shouldAutoDeactivate = false;
+    if (employee.relieving_date) {
       const [ry, rm, rd] = String(employee.relieving_date).split('-').map(Number);
       const relievingDate = new Date(ry, rm - 1, rd);
-      return relievingDate <= today;
-    })());
+      if (relievingDate <= today) {
+        // If payroll for the relieving month has already been disbursed (month locked),
+        // do NOT auto-deactivate based on the relieving date — preview-locked months
+        // should not be used to trigger status changes.
+        const payrollForRelievingMonth = await this.payrollRepository.findOne({
+          where: { month: rm, year: ry, status: 'disbursed' },
+        });
+        if (!payrollForRelievingMonth) {
+          shouldAutoDeactivate = true;
+        }
+      }
+    }
 
     if (updateEmployeeDto.active_status === false || shouldAutoDeactivate) {
       const pendingAdvance = await this.advanceRepository.findOne({
@@ -483,34 +487,7 @@ export class EmployeesService {
 
     const saved = await this.employeesRepository.save(employee);
 
-    if (newCtc !== undefined) {
-      // Appraisal branch: update CTC, sync structure, then clear appraisal fields
-      saved.monthly_ctc = newCtc;
-      if (isPfRequiredByMonthlyCtc(newCtc)) {
-        saved.pf_deduction = true;
-      }
-      await this.employeesRepository.save(saved);
-
-      if (shouldDeleteAppraisalStructure) {
-        await this.salaryStructureRepository.delete({
-          employee_id: saved.id,
-          effective_from: appraisal_effective_date,
-        });
-
-        if (previousStructureToReactivate) {
-          await this.salaryStructureRepository.update(
-            { id: previousStructureToReactivate.id },
-            { is_active: true }
-          );
-        }
-      } else {
-        await this.syncSalaryStructureFromMonthlyCtc(saved, newCtc, effectiveDate);
-      }
-
-      saved.appraisal = 0;
-      saved.appraisal_effective_date = null;
-      await this.employeesRepository.save(saved);
-    } else if (monthly_ctc !== undefined) {
+    if (monthly_ctc !== undefined) {
       // Direct CTC update: re-sync with new CTC value.
       // If pf_deduction also changed in the same request, Object.assign has already
       // applied it to `saved`; force sync so equal CTC does not skip PF recalculation.
@@ -705,10 +682,6 @@ export class EmployeesService {
     const errors: string[] = [];
     let importedCount = 0;
 
-    const csvEmployeeCodes = new Set<string>();
-    const csvEmails = new Set<string>();
-    const csvPhones = new Set<string>();
-
     for (let i = 1; i < lines.length; i++) {
       try {
         const values = parseCsvLine(lines[i]);
@@ -719,97 +692,93 @@ export class EmployeesService {
 
         const data: any = {};
         headers.forEach((header, index) => {
-          const val = values[index]?.trim();
-          if (header === 'employee code' || header === 'employee_code') data.employee_code = val;
-          else if (header === 'name') data.name = val;
-          else if (header === 'email') data.email = val;
-          else if (header === 'personal email' || header === 'personal_email') data.personal_email = val || null;
-          else if (header === 'phone') data.phone = val || null;
-          else if (header === 'department') data.department = val;
-          else if (header === 'designation') data.designation = val;
-          else if (header === 'joining date' || header === 'joining_date') {
-            if (val) {
-              const matchDmy = val.match(/^(\d{1,2})-(\d{1,2})-(\d{4})$/);
-              if (matchDmy) {
-                const [_, d, m, y] = matchDmy;
-                data.joining_date = `${y}-${m.padStart(2, '0')}-${d.padStart(2, '0')}`;
-              } else {
-                data.joining_date = val;
-              }
-            } else {
-              data.joining_date = val;
-            }
-          }
-          else if (header === 'bank name' || header === 'bank_name') data.bank_name = val;
-          else if (header === 'account number' || header === 'account_number') data.account_number = val;
-          else if (header === 'ifsc') data.ifsc = val;
-          else if (header === 'pf no. / uan' || header === 'pf no / uan' || header === 'pf_uan' || header === 'uan') data.pf_uan = val || null;
-          else if (header === 'tax regime' || header === 'tax_regime') data.tax_regime = val || 'new';
-          else if (header === 'active status' || header === 'active_status') {
-            data.active_status = val?.toLowerCase() === 'active' || val?.toLowerCase() === 'true' || val === '1';
-          }
+          data[header] = values[index].trim();
         });
 
-        if (!data.tax_regime) {
-          data.tax_regime = 'new';
-        }
-        if (data.active_status === undefined) {
-          data.active_status = true;
-        }
-
-        if (!data.employee_code || !data.name) {
-          errors.push(`Row ${i + 1}: Missing employee_code or name`);
+        const empCode = data['employee code'];
+        if (!empCode) {
+          errors.push(`Row ${i + 1}: Missing Employee Code`);
           continue;
         }
 
-        if (csvEmployeeCodes.has(data.employee_code)) {
-          errors.push(`Row ${i + 1}: Duplicate Employee Code "${data.employee_code}" in CSV`);
-          continue;
-        }
-        if (data.email && csvEmails.has(data.email.toLowerCase())) {
-          errors.push(`Row ${i + 1}: Duplicate Email "${data.email}" in CSV`);
-          continue;
-        }
-        if (data.phone && csvPhones.has(data.phone)) {
-          errors.push(`Row ${i + 1}: Duplicate Phone "${data.phone}" in CSV`);
+        const employee = await this.employeesRepository.findOne({ where: { employee_code: empCode } });
+        if (!employee) {
+          errors.push(`Row ${i + 1}: Employee with code ${empCode} not found`);
           continue;
         }
 
-        csvEmployeeCodes.add(data.employee_code);
-        if (data.email) csvEmails.add(data.email.toLowerCase());
-        if (data.phone) csvPhones.add(data.phone);
+        let monthlyInput = await this.monthlyInputRepo.findOne({
+          where: { employee_id: employee.id }
+        });
 
-        const existingCode = await this.employeesRepository.findOne({ where: { employee_code: data.employee_code } });
-
-        if (data.email) {
-          const existingEmail = await this.employeesRepository.findOne({ where: { email: data.email } });
-          if (existingEmail && (!existingCode || existingEmail.id !== existingCode.id)) {
-            errors.push(`Row ${i + 1}: Email "${data.email}" is already taken by another employee`);
-            continue;
-          }
+        const parseNum = (val: string) => val ? parseFloat(val) : null;
+        
+        if (!monthlyInput) {
+          monthlyInput = this.monthlyInputRepo.create({
+            employee_id: employee.id
+          });
+        }
+        
+        monthlyInput.no_of_days_present = parseNum(data['days present']) ?? null;
+        monthlyInput.late_arrival_deduction = parseNum(data['late arrival days']) ?? 0;
+        monthlyInput.bonus_incentives = parseNum(data['bonus/incentive']) ?? 0;
+        monthlyInput.leave_encashment = parseNum(data['leave encashment']) ?? 0;
+        monthlyInput.damages_recovery = parseNum(data['damages']) ?? 0;
+        monthlyInput.other_deductions = parseNum(data['other deductions']) ?? 0;
+        
+        const appraisalVal = parseNum(data['appraisal']);
+        if (appraisalVal !== null && appraisalVal !== undefined) {
+            monthlyInput.appraisal = appraisalVal;
         }
 
-        if (data.phone) {
-          const existingPhone = await this.employeesRepository.findOne({ where: { phone: data.phone } });
-          if (existingPhone && (!existingCode || existingPhone.id !== existingCode.id)) {
-            errors.push(`Row ${i + 1}: Phone "${data.phone}" is already taken by another employee`);
-            continue;
-          }
-        }
-
-        if (existingCode) {
-          Object.assign(existingCode, data);
-          await this.employeesRepository.save(existingCode);
-        } else {
-          await this.employeesRepository.save(this.employeesRepository.create(data));
-        }
+        await this.monthlyInputRepo.save(monthlyInput);
         importedCount++;
-      } catch (err: any) {
-        errors.push(`Row ${i + 1}: ${err.message || err}`);
+      } catch (err) {
+        errors.push(`Row ${i + 1}: ${err.message}`);
       }
     }
+
     return { imported: importedCount, errors };
   }
+
+  async generatePreviewCsvExport(month: string): Promise<string> {
+    const employees = await this.employeesRepository.find({ where: { active_status: true } });
+    const inputs = await this.monthlyInputRepo.find({ where: { month } });
+
+    const headers = [
+      'Employee Code',
+      'Name',
+      'Days Present',
+      'Late Arrival Days',
+      'Bonus/Incentive',
+      'Leave Encashment',
+      'Damages',
+      'Other Deductions',
+      'Appraisal'
+    ];
+    
+    let csv = headers.map(h => escapeCsv(h)).join(',') + '\n';
+
+    for (const emp of employees) {
+      const input = inputs.find(i => i.employee_id === emp.id);
+      
+      const row = [
+        emp.employee_code,
+        emp.name,
+        input?.no_of_days_present?.toString() || '',
+        input?.late_arrival_deduction?.toString() || '',
+        input?.bonus_incentives?.toString() || '',
+        input?.leave_encashment?.toString() || '',
+        input?.damages_recovery?.toString() || '',
+        input?.other_deductions?.toString() || '',
+        input?.appraisal?.toString() || ''
+      ];
+      csv += row.map(v => escapeCsv(v)).join(',') + '\n';
+    }
+
+    return csv;
+  }
+
 
   async importEmployeesJson(employeesData: any[]): Promise<{ imported: number; errors: string[] }> {
     const errors: string[] = [];
@@ -1105,11 +1074,12 @@ export class EmployeesService {
         const gross = Number((monthlyCtc - employerPf - employerEsi).toFixed(2));
 
         const consoleAbsentDays = Number(employee.deduction_absent || 0);
-        const derivedAbsentDays = Math.max(0, daysInMonth - (employee.no_of_days_present ?? daysInMonth));
+        const derivedAbsentDays = 0; // Fixed projection absent days
         const totalNpd = Math.min(daysInMonth, consoleAbsentDays + derivedAbsentDays + getEmploymentNonPayableDays(m.year, m.month));
         const payableDays = Math.max(0, daysInMonth - totalNpd);
         const payrollRatio = daysInMonth > 0 ? payableDays / daysInMonth : 1;
         const payableGross = Number((gross * payrollRatio).toFixed(2));
+        const nonPayableDeduction = Number((gross - payableGross).toFixed(2));
         const payableBasic = Number((basic * payrollRatio).toFixed(2));
 
         const pf = pfApplicable ? Number(Math.min(payableBasic * pfEmployeeRate, maxPfCap * payrollRatio).toFixed(2)) : 0;
@@ -1121,13 +1091,14 @@ export class EmployeesService {
         const leaveEncashment = Number(employee.leave_encashment || 0);
         const damagesRecovery = Number(employee.damages_recovery || 0);
         const otherDeductions = Number(employee.other_deductions || 0);
-        const totalEarnings = Number((payableGross + bonusIncentives + leaveEncashment).toFixed(2));
+        const totalEarnings = Number((gross + bonusIncentives + leaveEncashment).toFixed(2));
 
         return {
           year: m.year,
           month: m.month,
           rangeRatio,
           payableGross,
+          nonPayableDeduction,
           totalEarnings,
           pf,
           esi,
@@ -1153,10 +1124,6 @@ export class EmployeesService {
       const remainingAnnualTax = Math.max(0, totalAnnualTax - taxDeducted);
       const monthlyTdsRemaining = remainingFullMonths > 0 ? Number((remainingAnnualTax / remainingFullMonths).toFixed(2)) : 0;
 
-      if (employee.tax_deduction !== false) {
-        estimatedMonthlyPayout = Number(Math.max(0, estimatedMonthlyPayout - monthlyTdsRemaining).toFixed(2));
-      }
-
       const projectedAdvanceRemaining = new Map<number, number>();
       advances.forEach((advance) => {
         projectedAdvanceRemaining.set(advance.id, Number(advance.remaining_amount || 0));
@@ -1178,7 +1145,8 @@ export class EmployeesService {
           tax +
           calc.lateArrivalDeduction +
           calc.damagesRecovery +
-          calc.otherDeductions;
+          calc.otherDeductions +
+          calc.nonPayableDeduction;
         let availableForAdvances = Math.max(0, Number((calc.totalEarnings - totalDeductions).toFixed(2)));
         let projectedAdvanceRecovery = 0;
 
@@ -1530,30 +1498,51 @@ export class EmployeesService {
   }
 
   async removeDepartment(id: number): Promise<void> {
-    const department = await this.departmentRepository.findOne({ where: { id } });
-    if (!department) {
-      throw new NotFoundException('Department not found');
-    }
-    const count = await this.employeesRepository.count({
-      where: { department: department.name, deleted_at: IsNull() },
-    });
-    if (count > 0) {
-      throw new BadRequestException('Cannot delete department because it is mapped to one or more employees');
-    }
     await this.departmentRepository.delete(id);
   }
 
   async removeDesignation(id: number): Promise<void> {
-    const designation = await this.designationRepository.findOne({ where: { id } });
-    if (!designation) {
-      throw new NotFoundException('Designation not found');
-    }
-    const count = await this.employeesRepository.count({
-      where: { designation: designation.name, deleted_at: IsNull() },
-    });
-    if (count > 0) {
-      throw new BadRequestException('Cannot delete designation because it is mapped to one or more employees');
-    }
     await this.designationRepository.delete(id);
   }
-}
+
+
+  generatePreviewCsvSample(): string {
+    const headers = ['Employee Code', 'Days Present', 'Late Arrival Days', 'Bonus/Incentive', 'Leave Encashment', 'Damages', 'Other Deductions', 'Appraisal'];
+    return headers.join(',') + '\n';
+  }
+
+  async importPreviewCsv(csvContent: string, month: string): Promise<{ imported: number; errors: string[] }> {
+    const lines = csvContent.split(/\r?\n/).filter(line => line.trim().length > 0);
+    if (lines.length < 2) return { imported: 0, errors: ['CSV is empty'] };
+    const headers = parseCsvLine(lines[0]).map(h => h.trim().toLowerCase());
+    const errors: string[] = [];
+    let importedCount = 0;
+    for (let i = 1; i < lines.length; i++) {
+      try {
+        const values = parseCsvLine(lines[i]);
+        if (values.length < headers.length) continue;
+        const data = {};
+        headers.forEach((header, index) => { data[header] = values[index].trim(); });
+        const empCode = data['employee code'];
+        if (!empCode) continue;
+        const employee = await this.employeesRepository.findOne({ where: { employee_code: empCode } });
+        if (!employee) continue;
+        let monthlyInput = await this.monthlyInputRepo.findOne({ where: { employee_id: employee.id } });
+        const parseNum = (val) => val ? parseFloat(val) : null;
+        if (!monthlyInput) monthlyInput = this.monthlyInputRepo.create({ employee_id: employee.id, month });
+        monthlyInput.no_of_days_present = parseNum(data['days present']) ?? null;
+        monthlyInput.late_arrival_deduction = parseNum(data['late arrival days']) ?? 0;
+        monthlyInput.bonus_incentives = parseNum(data['bonus/incentive']) ?? 0;
+        monthlyInput.leave_encashment = parseNum(data['leave encashment']) ?? 0;
+        monthlyInput.damages_recovery = parseNum(data['damages']) ?? 0;
+        monthlyInput.other_deductions = parseNum(data['other deductions']) ?? 0;
+        const appraisalVal = parseNum(data['appraisal']);
+        if (appraisalVal !== null && appraisalVal !== undefined) monthlyInput.appraisal = appraisalVal;
+        await this.monthlyInputRepo.save(monthlyInput);
+        importedCount++;
+      } catch (err) { errors.push(`Row ${i + 1}: ${err.message}`); }
+    }
+    return { imported: importedCount, errors };
+  }
+
+  }

@@ -94,6 +94,23 @@ export class PayrollService {
       throw new BadRequestException(`Employee ${employee.name} is inactive`);
     }
 
+    const monthStr = `${year}-${String(month).padStart(2, '0')}`;
+    const monthlyInput = await this.employeesService.getMonthlyInput(employeeId, monthStr);
+    
+    // Always override legacy employee properties with monthly input (or default to 0/null)
+    employee.no_of_days_present = monthlyInput ? monthlyInput.no_of_days_present : null;
+    employee.deduction_absent = monthlyInput ? monthlyInput.deduction_absent : 0;
+    employee.leave_encashment = monthlyInput ? monthlyInput.leave_encashment : 0;
+    employee.late_arrival_deduction = monthlyInput ? monthlyInput.late_arrival_deduction : 0;
+    employee.damages_recovery = monthlyInput ? monthlyInput.damages_recovery : 0;
+    employee.bonus_incentives = monthlyInput ? monthlyInput.bonus_incentives : 0;
+    employee.other_deductions = monthlyInput ? monthlyInput.other_deductions : 0;
+    // Appraisal is persistent on the employee, only override if monthlyInput has it
+    if (monthlyInput && monthlyInput.appraisal !== null && monthlyInput.appraisal !== undefined) {
+      employee.appraisal = monthlyInput.appraisal;
+      employee.appraisal_effective_date = monthlyInput.appraisal_effective_date;
+    }
+
     const employmentProration = this.getEmploymentProration(employee, month, year);
     if (!employmentProration.isPayable) {
       throw new BadRequestException(`Employee ${employee.name} is not payable for ${month}/${year}: ${employmentProration.reason}`);
@@ -109,19 +126,8 @@ export class PayrollService {
 
     let monthlyCtc = Number(structure.ctc);
 
-    // Apply appraisal if effective this month, or if no effective date is set
-    if (Number(employee.appraisal) > 0) {
-      if (employee.appraisal_effective_date) {
-        const effectiveMonthStart = new Date(new Date(employee.appraisal_effective_date).getFullYear(), new Date(employee.appraisal_effective_date).getMonth(), 1);
-        const payrollMonthStart = new Date(year, month - 1, 1);
-        if (payrollMonthStart >= effectiveMonthStart) {
-          monthlyCtc += Number(employee.appraisal);
-        }
-      } else {
-        // If no effective date is provided, apply the appraisal immediately
-        monthlyCtc += Number(employee.appraisal);
-      }
-    }
+    // DYNAMIC APPRAISAL REMOVED: Appraisals are now permanently applied to CTC during generatePayroll
+    // which syncs the salary structure, ensuring UI consistency across the app.
 
     const pfSettings = await this.pfService.findActiveAtDate(`${year}-${String(month).padStart(2, '0')}-01`);
 
@@ -162,10 +168,10 @@ export class PayrollService {
     const payableDays = daysInMonth - totalNpd;
     const prorateRatio = daysInMonth > 0 ? payableDays / daysInMonth : 1;
 
-    // Prorated values
-    const payableGross  = Number((gross  * prorateRatio).toFixed(2));
+    // Prorated values (Calculated from CTC per requested policy)
+    const nonPayableDeduction = Number(((gross / daysInMonth) * totalNpd).toFixed(2));
+    const payableGross  = Math.max(0, Number((gross - nonPayableDeduction).toFixed(2)));
     const payableBasic  = Number((basic  * prorateRatio).toFixed(2));
-    const nonPayableDeduction = Number((gross  - payableGross).toFixed(2));
 
     // Prorated deductions
     const pfDeduction         = Number(Math.min(payableBasic * pfEmployeeRate,  maxPfCap * prorateRatio).toFixed(2));
@@ -318,7 +324,7 @@ export class PayrollService {
 
     return {
       employee,
-      grossSalary: payableGross,          // stored gross_salary = prorated gross
+      grossSalary: gross,          // changed to full gross to avoid confusion; absent is treated as a deduction
       nonPayableDeduction,
       pfDeduction: pfDeductionFinal,
       employeeEsiDeduction,
@@ -351,6 +357,48 @@ export class PayrollService {
       }
 
       try {
+        const monthStr = `${year}-${String(month).padStart(2, '0')}`;
+        const monthlyInput = await this.employeesService.getMonthlyInput(emp.id, monthStr);
+        let appraisal = emp.appraisal;
+        let effectiveDate = emp.appraisal_effective_date;
+        
+        if (monthlyInput && monthlyInput.appraisal !== null && monthlyInput.appraisal !== undefined) {
+          appraisal = monthlyInput.appraisal;
+          effectiveDate = monthlyInput.appraisal_effective_date;
+        }
+
+        if (Number(appraisal) > 0) {
+          let shouldApply = false;
+          if (effectiveDate) {
+            const effectiveMonthStart = new Date(new Date(effectiveDate).getFullYear(), new Date(effectiveDate).getMonth(), 1);
+            const payrollMonthStart = new Date(year, month - 1, 1);
+            if (payrollMonthStart >= effectiveMonthStart) {
+              shouldApply = true;
+            }
+          } else {
+            shouldApply = true;
+          }
+
+          if (shouldApply) {
+            const newCtc = Number(emp.monthly_ctc) + Number(appraisal);
+            
+            // Permanently update employee and create new Salary Structure
+            await this.employeesService.update(emp.id, { 
+              monthly_ctc: newCtc, 
+              appraisal: 0, 
+              appraisal_effective_date: null 
+            } as any);
+            
+            // Clear it in monthlyInput if it came from there to prevent double counting
+            if (monthlyInput && monthlyInput.appraisal > 0) {
+              await this.employeesService.updateMonthlyInput(emp.id, monthStr, { 
+                appraisal: 0, 
+                appraisal_effective_date: null 
+              } as any);
+            }
+          }
+        }
+
         const calc = await this.calculateSingleEmployee(emp.id, month, year);
 
         let payroll = await this.payrollRepository.findOne({

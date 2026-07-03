@@ -16,6 +16,12 @@ export class MonthlyEmployeeInput {
   no_of_days_present: number | null;
 
   @Column({ type: 'decimal', precision: 12, scale: 2, default: 0 })
+  appraisal: number;
+
+  @Column({ type: 'date', nullable: true })
+  appraisal_effective_date: string;
+
+  @Column({ type: 'decimal', precision: 12, scale: 2, default: 0 })
   deduction_absent: number;
 
   @Column({ type: 'decimal', precision: 12, scale: 2, default: 0 })
