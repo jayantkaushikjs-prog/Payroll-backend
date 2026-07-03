@@ -118,7 +118,11 @@ export class EmployeesService {
       throw new BadRequestException('Preview month is required in YYYY-MM format');
     }
 
-    const employees = await this.findAll();
+    // Only include active, non-archived employees in the preview
+    const employees = await this.employeesRepository.find({
+      where: { deleted_at: IsNull(), active_status: true },
+      order: { id: 'DESC' },
+    });
     const inputs = await this.monthlyInputRepo.find({
       where: { month },
     });
