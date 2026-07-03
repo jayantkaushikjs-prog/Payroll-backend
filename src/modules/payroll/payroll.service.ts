@@ -184,7 +184,7 @@ export class PayrollService {
     const employerEsiFinal    = esiApplicable ? Number((payableBasic * esiEmployerRate).toFixed(2)) : 0;
 
     // Additional Components
-    const lateAbsentDays = Math.floor(Number(employee.late_arrival_deduction || 0) / 3) * 0.5;
+    const lateAbsentDays = Number(employee.late_arrival_deduction || 0) < 3 ? 0 : (Number(employee.late_arrival_deduction || 0) / 3) * 0.5;
     const lateArrivalDeductionAmount = Number(((gross / daysInMonth) * lateAbsentDays).toFixed(2));
     const bonusIncentives = Number(employee.bonus_incentives || 0);
     const leaveEncashment = Number(employee.leave_encashment || 0);

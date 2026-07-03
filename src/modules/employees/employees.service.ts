@@ -113,6 +113,11 @@ export class EmployeesService {
   }
 
   async getPreviewForMonth(month: string): Promise<any[]> {
+    // Validate month format to avoid NaN month numbers reaching DB queries
+    if (!month || !/^\d{4}-\d{2}$/.test(month)) {
+      throw new BadRequestException('Preview month is required in YYYY-MM format');
+    }
+
     const employees = await this.findAll();
     const inputs = await this.monthlyInputRepo.find({
       where: { month },
@@ -1011,7 +1016,7 @@ export class EmployeesService {
       const employeePf = pfApplicable ? Number(Math.min(basic * pfEmployeeRate, maxPfCap).toFixed(2)) : 0;
       const employeeEsi = esiApplicable ? Number((basic * esiEmployeeRate).toFixed(2)) : 0;
       const professionalTaxDeduction = (monthlyCtc * 12) <= 250000 ? 0 : Number(professionalTax.toFixed(2));
-      const lateAbsentDays = Math.floor(Number(employee.late_arrival_deduction || 0) / 3) * 0.5;
+      const lateAbsentDays = Number(employee.late_arrival_deduction || 0) < 3 ? 0 : (Number(employee.late_arrival_deduction || 0) / 3) * 0.5;
       const daysInMonth = new Date(displayYear, displayMonth, 0).getDate();
       const lateArrivalDeduction = Number(((gross / daysInMonth) * lateAbsentDays).toFixed(2));
       estimatedMonthlyPayout = Number(Math.max(
@@ -1085,7 +1090,7 @@ export class EmployeesService {
         const pf = pfApplicable ? Number(Math.min(payableBasic * pfEmployeeRate, maxPfCap * payrollRatio).toFixed(2)) : 0;
         const esi = esiApplicable ? Number((payableBasic * esiEmployeeRate).toFixed(2)) : 0;
         const professionalTaxDeduction = (monthlyCtc * 12) <= 250000 ? 0 : Number(professionalTax.toFixed(2));
-        const lateAbsentDays = Math.floor(Number(employee.late_arrival_deduction || 0) / 3) * 0.5;
+        const lateAbsentDays = Number(employee.late_arrival_deduction || 0) < 3 ? 0 : (Number(employee.late_arrival_deduction || 0) / 3) * 0.5;
         const lateArrivalDeduction = Number(((gross / daysInMonth) * lateAbsentDays).toFixed(2));
         const bonusIncentives = Number(employee.bonus_incentives || 0);
         const leaveEncashment = Number(employee.leave_encashment || 0);

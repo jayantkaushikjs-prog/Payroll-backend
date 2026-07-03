@@ -150,6 +150,7 @@ export class EmployeesController {
   @Get('preview/:month')
   @RequirePermissions(Permission.VIEW_EMPLOYEE)
   getPreviewForMonth(@Param('month') month: string) {
+    this.assertPreviewMonth(month);
     return this.employeesService.getPreviewForMonth(month);
   }
 
