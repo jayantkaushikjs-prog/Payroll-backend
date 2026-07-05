@@ -34,9 +34,6 @@ export class PayrollService {
     private advancesService: AdvancesService,
   ) {}
 
-  private getFinancialYear(month: number, year: number): string {
-    return getFinancialYear(month, year);
-  }
 
   private parseDateOnly(dateString?: string | null): Date | null {
     if (!dateString) return null;
@@ -168,20 +165,20 @@ export class PayrollService {
     const payableDays = daysInMonth - totalNpd;
     const prorateRatio = daysInMonth > 0 ? payableDays / daysInMonth : 1;
 
-    // Prorated values
+    // Unprorated values for PF/ESI calculations (no proration ratio applied)
     const nonPayableDeduction = Number(((gross / daysInMonth) * totalNpd).toFixed(2));
     const payableGross  = Math.max(0, Number((gross - nonPayableDeduction).toFixed(2)));
-    const payableBasic  = Number((basic * prorateRatio).toFixed(2));
+    const payableBasic  = basic;
 
-    // Prorated deductions
-    const pfDeduction         = Number(Math.min(payableBasic * pfEmployeeRate,  maxPfCap * prorateRatio).toFixed(2));
-    const employeeEsiDeduction = esiApplicable ? Number((payableBasic * esiEmployeeRate).toFixed(2)) : 0;
+    // Deductions calculated on full basic salary
+    const pfDeduction         = Number(Math.min(basic * pfEmployeeRate, maxPfCap).toFixed(2));
+    const employeeEsiDeduction = esiApplicable ? Number((basic * esiEmployeeRate).toFixed(2)) : 0;
     const pfDeductionFinal    = pfApplicable ? pfDeduction : 0;
     const ptDeduction         = appliedPt > 0 ? Number(appliedPt.toFixed(2)) : 0;
     
-    // Prorated Employer contributions
-    const employerPfFinal     = pfApplicable ? Number(Math.min(payableBasic * pfEmployerRate, maxPfCap * prorateRatio).toFixed(2)) : 0;
-    const employerEsiFinal    = esiApplicable ? Number((payableBasic * esiEmployerRate).toFixed(2)) : 0;
+    // Employer contributions calculated on full basic salary
+    const employerPfFinal     = pfApplicable ? Number(Math.min(basic * pfEmployerRate, maxPfCap).toFixed(2)) : 0;
+    const employerEsiFinal    = esiApplicable ? Number((basic * esiEmployerRate).toFixed(2)) : 0;
 
     // Additional Components
     const lateAbsentDays = Number(employee.late_arrival_deduction || 0) < 3 ? 0 : (Number(employee.late_arrival_deduction || 0) / 3) * 0.5;
@@ -202,14 +199,14 @@ export class PayrollService {
     let slabs = [];
 
     if (employee.tax_deduction !== false) {
-      const financialYear = this.getFinancialYear(month, year);
+      const financialYear = getFinancialYear(month, year);
       const taxRegime = employee.tax_regime || 'new';
       const taxSlabs = await this.taxService.findByFinancialYearAndRegime(financialYear, taxRegime);
 
       const allRecords = await this.payrollRepository.find({ where: { employee_id: employeeId } });
       const ytdRecords = allRecords.filter(p => {
         if (p.status !== 'locked' && p.status !== 'disbursed') return false;
-        if (this.getFinancialYear(p.month, p.year) !== financialYear) return false;
+        if (getFinancialYear(p.month, p.year) !== financialYear) return false;
         return p.year < year || (p.year === year && p.month < month);
       });
 
@@ -252,7 +249,6 @@ export class PayrollService {
       lateArrivalDeduction: lateArrivalDeductionAmount, damages: damagesRecovery, otherDeductions: otherDeductionsAmount,
       // Tax
       grossPaidYTD, taxPaidYTD, projectedAnnualGross,
-      grossIncome: projectedAnnualGross,
       standardDeduction,
       taxableIncome,
       baseTax, rebate,
@@ -644,52 +640,19 @@ export class PayrollService {
 
     let expectedPayrollThisMonth = 0;
     for (const employee of activeEmployeeList) {
-      try {
-        const structure = await this.salaryStructuresService.findActiveByEmployee(employee.id).catch(() => null);
-        const monthlyCtc = Number(structure?.ctc || employee.monthly_ctc || 0);
-        const effectiveCtc = Number((monthlyCtc + Number(employee.appraisal || 0)).toFixed(2));
-        const daysInMonth = new Date(year, month, 0).getDate();
-        const monthStart = new Date(Date.UTC(year, month - 1, 1));
-        const monthEnd = new Date(Date.UTC(year, month - 1, daysInMonth));
-        const joiningDate = employee.joining_date ? new Date(`${employee.joining_date}T00:00:00.000Z`) : null;
-        const relievingDate = employee.relieving_date ? new Date(`${employee.relieving_date}T00:00:00.000Z`) : null;
-        let payableDays = daysInMonth;
-        if (joiningDate && monthEnd < joiningDate) {
-          payableDays = 0;
-        } else if (joiningDate && joiningDate.getUTCFullYear() === year && joiningDate.getUTCMonth() + 1 === month) {
-          payableDays = Math.max(0, payableDays - Math.max(0, joiningDate.getUTCDate() - 1));
-        }
-        if (relievingDate && monthStart > relievingDate) {
-          payableDays = 0;
-        } else if (relievingDate && relievingDate.getUTCFullYear() === year && relievingDate.getUTCMonth() + 1 === month) {
-          payableDays = Math.max(0, payableDays - Math.max(0, daysInMonth - relievingDate.getUTCDate()));
-        }
-        const ratio = daysInMonth > 0 ? payableDays / daysInMonth : 1;
-        const proratedCtc = Number((effectiveCtc * Math.max(0, Math.min(1, ratio))).toFixed(2));
-        expectedPayrollThisMonth += proratedCtc;
-      } catch {
-        const structure = await this.salaryStructuresService.findActiveByEmployee(employee.id).catch(() => null);
-        const monthlyCtc = Number(structure?.ctc || employee.monthly_ctc || 0);
-        const effectiveCtc = Number((monthlyCtc + Number(employee.appraisal || 0)).toFixed(2));
-        const daysInMonth = new Date(year, month, 0).getDate();
-        const monthStart = new Date(Date.UTC(year, month - 1, 1));
-        const monthEnd = new Date(Date.UTC(year, month - 1, daysInMonth));
-        const joiningDate = employee.joining_date ? new Date(`${employee.joining_date}T00:00:00.000Z`) : null;
-        const relievingDate = employee.relieving_date ? new Date(`${employee.relieving_date}T00:00:00.000Z`) : null;
-        let payableDays = daysInMonth;
-        if (joiningDate && monthEnd < joiningDate) {
-          payableDays = 0;
-        } else if (joiningDate && joiningDate.getUTCFullYear() === year && joiningDate.getUTCMonth() + 1 === month) {
-          payableDays = Math.max(0, payableDays - Math.max(0, joiningDate.getUTCDate() - 1));
-        }
-        if (relievingDate && monthStart > relievingDate) {
-          payableDays = 0;
-        } else if (relievingDate && relievingDate.getUTCFullYear() === year && relievingDate.getUTCMonth() + 1 === month) {
-          payableDays = Math.max(0, payableDays - Math.max(0, daysInMonth - relievingDate.getUTCDate()));
-        }
-        const ratio = daysInMonth > 0 ? payableDays / daysInMonth : 1;
-        expectedPayrollThisMonth += Number((effectiveCtc * Math.max(0, Math.min(1, ratio))).toFixed(2));
+      const structure = await this.salaryStructuresService.findActiveByEmployee(employee.id).catch(() => null);
+      const monthlyCtc = Number(structure?.ctc || employee.monthly_ctc || 0);
+      const effectiveCtc = Number((monthlyCtc + Number(employee.appraisal || 0)).toFixed(2));
+      const daysInMonth = new Date(year, month, 0).getDate();
+      
+      const proration = this.getEmploymentProration(employee, month, year);
+      let payableDays = 0;
+      if (proration.isPayable) {
+        payableDays = daysInMonth - proration.joiningNonPayableDays - proration.relievingNonPayableDays;
       }
+      const ratio = daysInMonth > 0 ? payableDays / daysInMonth : 1;
+      const proratedCtc = Number((effectiveCtc * Math.max(0, Math.min(1, ratio))).toFixed(2));
+      expectedPayrollThisMonth += proratedCtc;
     }
 
     const dynamicExpenses = await this.getPayrollExpenseSummary(month, year);

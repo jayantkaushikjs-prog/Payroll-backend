@@ -999,6 +999,9 @@ export class EmployeesService {
     let taxDeducted = 0;
     let advanceRecovered = 0;
     let esiDeducted = 0;
+    let employerPfPaid = 0;
+    let employerEsiPaid = 0;
+    let profTaxPaid = 0;
     let paidMonthsCount = 0;
 
     payrolls.forEach(p => {
@@ -1010,6 +1013,9 @@ export class EmployeesService {
 
       const breakdown = p.tax_breakdown_json as any;
       esiDeducted += Number(breakdown?.employeeEsi ?? breakdown?.employeeEsiDeduction ?? 0) * ratio;
+      employerPfPaid += Number(breakdown?.employerPf ?? breakdown?.employerPfContribution ?? 0) * ratio;
+      employerEsiPaid += Number(breakdown?.employerEsi ?? breakdown?.employerEsiContribution ?? 0) * ratio;
+      profTaxPaid += Number(breakdown?.professionalTax ?? 0) * ratio;
 
       paidMonthsCount += ratio;
     });
@@ -1050,6 +1056,9 @@ export class EmployeesService {
     let amountToBePaid = 0;
     let expectedPFRemaining = 0;
     let expectedESIRemaining = 0;
+    let expectedEmployerPFRemaining = 0;
+    let expectedEmployerESIRemaining = 0;
+    let expectedProfTaxRemaining = 0;
     let expectedTaxRemaining = 0;
     let remainingMonthsCount = 0;
     let estimatedMonthlyPayout = 0;
@@ -1145,13 +1154,15 @@ export class EmployeesService {
         const derivedAbsentDays = 0; // Fixed projection absent days
         const totalNpd = Math.min(daysInMonth, consoleAbsentDays + derivedAbsentDays + getEmploymentNonPayableDays(m.year, m.month));
         const payableDays = Math.max(0, daysInMonth - totalNpd);
+        if (payableDays === 0) return null;
+
         const payrollRatio = daysInMonth > 0 ? payableDays / daysInMonth : 1;
         const payableGross = Number((gross * payrollRatio).toFixed(2));
         const nonPayableDeduction = Number((gross - payableGross).toFixed(2));
-        const payableBasic = Number((basic * payrollRatio).toFixed(2));
+        const payableBasic = basic;
 
-        const pf = pfApplicable ? Number(Math.min(payableBasic * pfEmployeeRate, maxPfCap * payrollRatio).toFixed(2)) : 0;
-        const esi = esiApplicable ? Number((payableBasic * esiEmployeeRate).toFixed(2)) : 0;
+        const pf = pfApplicable ? Number(Math.min(basic * pfEmployeeRate, maxPfCap).toFixed(2)) : 0;
+        const esi = esiApplicable ? Number((basic * esiEmployeeRate).toFixed(2)) : 0;
         const professionalTaxDeduction = (monthlyCtc * 12) <= 250000 ? 0 : Number(professionalTax.toFixed(2));
         const lateAbsentDays = Number(employee.late_arrival_deduction || 0) < 3 ? 0 : (Number(employee.late_arrival_deduction || 0) / 3) * 0.5;
         const lateArrivalDeduction = Number(((gross / daysInMonth) * lateAbsentDays).toFixed(2));
@@ -1170,6 +1181,8 @@ export class EmployeesService {
           totalEarnings,
           pf,
           esi,
+          employerPf,
+          employerEsi,
           professionalTaxDeduction,
           lateArrivalDeduction,
           damagesRecovery,
@@ -1284,6 +1297,9 @@ export class EmployeesService {
         amountToBePaid += net * calc.rangeRatio;
         expectedPFRemaining += calc.pf * calc.rangeRatio;
         expectedESIRemaining += calc.esi * calc.rangeRatio;
+        expectedEmployerPFRemaining += (calc.employerPf ?? 0) * calc.rangeRatio;
+        expectedEmployerESIRemaining += (calc.employerEsi ?? 0) * calc.rangeRatio;
+        expectedProfTaxRemaining += calc.professionalTaxDeduction * calc.rangeRatio;
         expectedTaxRemaining += tax * calc.rangeRatio;
         remainingMonthsCount += calc.rangeRatio;
       }
@@ -1343,8 +1359,14 @@ export class EmployeesService {
       estimatedMonthlyPayout,
       pfDeducted,
       expectedPFRemaining,
+      employerPfPaid,
+      expectedEmployerPFRemaining,
       esiDeducted,
       expectedESIRemaining,
+      employerEsiPaid,
+      expectedEmployerESIRemaining,
+      profTaxPaid,
+      expectedProfTaxRemaining,
       taxDeducted,
       expectedTaxRemaining,
       advanceRecovered,
