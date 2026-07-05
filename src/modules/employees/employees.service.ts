@@ -224,9 +224,30 @@ export class EmployeesService {
 
       const input = inputMap.get(emp.id);
 
-      // Read appraisal from monthly input instead of calculating dynamically
-      let appraisal = input ? input.appraisal : 0;
-      let appraisalEffectiveDate = input ? input.appraisal_effective_date : null;
+      // Read appraisal from monthly input, fall back to employee profile if effective
+      let appraisal = 0;
+      let appraisalEffectiveDate = null;
+
+      if (input && Number(input.appraisal) > 0) {
+        appraisal = input.appraisal;
+        appraisalEffectiveDate = input.appraisal_effective_date;
+      } else if (Number(emp.appraisal) > 0) {
+        let shouldApply = false;
+        if (emp.appraisal_effective_date) {
+          const effectiveMonthStart = new Date(new Date(emp.appraisal_effective_date).getFullYear(), new Date(emp.appraisal_effective_date).getMonth(), 1);
+          const previewMonthStart = new Date(year, monthNum - 1, 1);
+          if (previewMonthStart >= effectiveMonthStart) {
+            shouldApply = true;
+          }
+        } else {
+          shouldApply = true;
+        }
+
+        if (shouldApply) {
+          appraisal = emp.appraisal;
+          appraisalEffectiveDate = emp.appraisal_effective_date;
+        }
+      }
 
       // Determine preview status for this employee for the requested month.
       // If the preview is locked for the month, and the employee's relieving date

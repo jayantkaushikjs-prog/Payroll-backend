@@ -102,8 +102,8 @@ export class PayrollService {
     employee.damages_recovery = monthlyInput ? monthlyInput.damages_recovery : 0;
     employee.bonus_incentives = monthlyInput ? monthlyInput.bonus_incentives : 0;
     employee.other_deductions = monthlyInput ? monthlyInput.other_deductions : 0;
-    // Appraisal is persistent on the employee, only override if monthlyInput has it
-    if (monthlyInput && monthlyInput.appraisal !== null && monthlyInput.appraisal !== undefined) {
+    // Appraisal is persistent on the employee, only override if monthlyInput has a non-zero appraisal
+    if (monthlyInput && monthlyInput.appraisal !== null && monthlyInput.appraisal !== undefined && Number(monthlyInput.appraisal) > 0) {
       employee.appraisal = monthlyInput.appraisal;
       employee.appraisal_effective_date = monthlyInput.appraisal_effective_date;
     }
@@ -358,7 +358,7 @@ export class PayrollService {
         let appraisal = emp.appraisal;
         let effectiveDate = emp.appraisal_effective_date;
         
-        if (monthlyInput && monthlyInput.appraisal !== null && monthlyInput.appraisal !== undefined) {
+        if (monthlyInput && monthlyInput.appraisal !== null && monthlyInput.appraisal !== undefined && Number(monthlyInput.appraisal) > 0) {
           appraisal = monthlyInput.appraisal;
           effectiveDate = monthlyInput.appraisal_effective_date;
         }
