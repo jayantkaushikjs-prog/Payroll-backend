@@ -118,6 +118,21 @@ export class EmployeesService {
       throw new BadRequestException('Preview month is required in YYYY-MM format');
     }
 
+    const isInputModified = (input: any): boolean => {
+      if (!input) return false;
+      return (
+        input.no_of_days_present !== null ||
+        Number(input.deduction_absent) !== 0 ||
+        Number(input.leave_encashment) !== 0 ||
+        Number(input.late_arrival_deduction) !== 0 ||
+        Number(input.damages_recovery) !== 0 ||
+        Number(input.bonus_incentives) !== 0 ||
+        Number(input.other_deductions) !== 0 ||
+        Number(input.appraisal) !== 0 ||
+        (input.remarks !== null && input.remarks !== '')
+      );
+    };
+
     // Only include active, non-archived employees in the preview
     const employees = await this.employeesRepository.find({
       where: { deleted_at: IsNull(), active_status: true },
@@ -286,7 +301,7 @@ export class EmployeesService {
         other_deductions: input ? input.other_deductions : 0,
         remarks: input ? input.remarks : null,
         other_inputs: input ? input.other_inputs : null,
-        has_monthly_input: !!input, // Help frontend identify if it was explicitly saved
+        has_monthly_input: isInputModified(input), // Help frontend identify if it was explicitly saved with overrides
       });
     }
 
