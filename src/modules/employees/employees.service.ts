@@ -667,7 +667,7 @@ export class EmployeesService {
 
   async countEmployees(): Promise<{ total: number; active: number }> {
     const [total, active] = await Promise.all([
-      this.employeesRepository.count({ where: { deleted_at: IsNull() } }),
+      this.employeesRepository.count(),
       this.employeesRepository.count({ where: { active_status: true, deleted_at: IsNull() } }),
     ]);
 
