@@ -1,4 +1,4 @@
-import { Injectable, ConflictException, NotFoundException, BadRequestException } from '@nestjs/common';
+import { Injectable, ConflictException, NotFoundException, BadRequestException, Inject, forwardRef } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Between, Repository, LessThanOrEqual, LessThan, Not, IsNull, In } from 'typeorm';
 import { Employee } from './employee.entity';
@@ -8,8 +8,8 @@ import { CreateEmployeeDto } from './dto/create-employee.dto';
 import { UpdateEmployeeDto } from './dto/update-employee.dto';
 import { Payroll } from '../payroll/payroll.entity';
 import { SalaryStructure } from '../salary-structures/salary-structure.entity';
-import { EmployeeAdvance } from '../advances/employee-advance.entity';
-import { PFSettings } from '../pf/pf-settings.entity';
+import { PFService } from '../pf/pf.service';
+import { AdvancesService } from '../advances/advances.service';
 import { HrPreviewReview } from './hr-preview-review.entity';
 import { MonthlyEmployeeInput } from './monthly-employee-input.entity';
 import { calculateAnnualTax } from '../../utils/tax-calculator.util';
@@ -41,10 +41,9 @@ export class EmployeesService {
     private payrollRepository: Repository<Payroll>,
     @InjectRepository(SalaryStructure)
     private salaryStructureRepository: Repository<SalaryStructure>,
-    @InjectRepository(EmployeeAdvance)
-    private advanceRepository: Repository<EmployeeAdvance>,
-    @InjectRepository(PFSettings)
-    private pfSettingsRepository: Repository<PFSettings>,
+    @Inject(forwardRef(() => AdvancesService))
+    private advancesService: AdvancesService,
+    private pfService: PFService,
     @InjectRepository(Department)
     private departmentRepository: Repository<Department>,
     @InjectRepository(Designation)
@@ -182,9 +181,7 @@ export class EmployeesService {
     });
 
     // Fetch all active advances to check pending dues
-    const activeAdvances = await this.advanceRepository.find({
-      where: { is_fully_recovered: false },
-    });
+    const activeAdvances = await this.advancesService.findActive();
     const advanceByEmployee = new Map<number, number>();
     activeAdvances.forEach(adv => {
       const cur = advanceByEmployee.get(adv.employee_id) || 0;
@@ -365,10 +362,8 @@ export class EmployeesService {
 
   async remove(id: number): Promise<void> {
     const employee = await this.findOne(id);
-    const pendingAdvance = await this.advanceRepository.findOne({
-      where: { employee_id: id, is_fully_recovered: false },
-    });
-    if (pendingAdvance && Number(pendingAdvance.remaining_amount) > 0.01) {
+    const hasPending = await this.advancesService.hasOutstandingAdvances(id);
+    if (hasPending) {
       throw new BadRequestException('Cannot archive employee while Advances are pending, Firstly clear all the dues.');
     }
 
@@ -394,7 +389,7 @@ export class EmployeesService {
     
     // Delete other related entities
     await this.salaryStructureRepository.delete({ employee_id: id });
-    await this.advanceRepository.delete({ employee_id: id });
+    await this.advancesService.removeByEmployee(id);
 
     await this.employeesRepository.delete(id);
   }
@@ -407,7 +402,7 @@ export class EmployeesService {
     // Delete related records
     await this.payrollRepository.delete({ employee_id: In(ids) });
     await this.salaryStructureRepository.delete({ employee_id: In(ids) });
-    await this.advanceRepository.delete({ employee_id: In(ids) });
+    await this.advancesService.removeByEmployees(ids);
 
     await this.employeesRepository.delete(ids);
   }
@@ -574,10 +569,8 @@ export class EmployeesService {
     }
 
     if (updateEmployeeDto.active_status === false || shouldAutoDeactivate) {
-      const pendingAdvance = await this.advanceRepository.findOne({
-        where: { employee_id: employee.id, is_fully_recovered: false },
-      });
-      if (pendingAdvance && Number(pendingAdvance.remaining_amount) > 0.01) {
+      const hasPending = await this.advancesService.hasOutstandingAdvances(employee.id);
+      if (hasPending) {
         throw new BadRequestException('Cannot deactivate employee while Advances are pending, Firstly clear all the dues.');
       }
 
@@ -633,10 +626,7 @@ export class EmployeesService {
     }
 
     const effectiveFrom = preferredEffectiveFrom || new Date().toISOString().split('T')[0];
-    const pfSettings = await this.pfSettingsRepository.findOne({
-      where: { effective_date: LessThanOrEqual(effectiveFrom) },
-      order: { effective_date: 'DESC' },
-    });
+    const pfSettings = await this.pfService.findActiveAtDate(effectiveFrom);
     const employerContributionRate = Number(pfSettings?.employer_contribution_rate ?? 12);
     const maxPfCap = Number(pfSettings?.max_pf_cap ?? 1800);
     const employeeEsiRate = pfSettings ? Number(pfSettings.esi_employee_contribution_rate) / 100 : undefined;
@@ -1061,10 +1051,7 @@ export class EmployeesService {
     });
 
     // Get all advances once so projected remaining net can mirror payroll recovery.
-    const advances = await this.advanceRepository.find({
-      where: { employee_id: employeeId },
-      order: { date: 'ASC' },
-    });
+    const advances = await this.advancesService.findByEmployeeAsc(employeeId);
 
     // Use salary structure history so annual/monthly/custom summaries follow revisions.
     const salaryStructures = await this.salaryStructureRepository.find({
@@ -1106,12 +1093,9 @@ export class EmployeesService {
     if (displayStructure) {
       const displayYear = endDate.getFullYear();
       const displayMonth = endDate.getMonth() + 1;
-      const pfSettings = await this.pfSettingsRepository.findOne({
-        where: {
-          effective_date: LessThanOrEqual(`${displayYear}-${String(displayMonth).padStart(2, '0')}-01`),
-        },
-        order: { effective_date: 'DESC' },
-      });
+      const pfSettings = await this.pfService.findActiveAtDate(
+        `${displayYear}-${String(displayMonth).padStart(2, '0')}-01`,
+      );
       const pfEmployerRate = (Number(pfSettings?.employer_contribution_rate) || 12) / 100;
       const pfEmployeeRate = (Number(pfSettings?.employee_contribution_rate) || 12) / 100;
       const esiEmployerRate = (Number(pfSettings?.esi_contribution_rate) || 3.25) / 100;
@@ -1169,12 +1153,9 @@ export class EmployeesService {
         const daysInMonth = new Date(m.year, m.month, 0).getDate();
         const rangeRatio = getProrationRatio(m.year, m.month);
         const monthlyCtc = Number(monthStructure.ctc) + getAppraisalForMonth(m.year, m.month);
-        const pfSettings = await this.pfSettingsRepository.findOne({
-          where: {
-            effective_date: LessThanOrEqual(`${m.year}-${String(m.month).padStart(2, '0')}-01`),
-          },
-          order: { effective_date: 'DESC' },
-        });
+        const pfSettings = await this.pfService.findActiveAtDate(
+          `${m.year}-${String(m.month).padStart(2, '0')}-01`,
+        );
 
         const pfEmployerRate = (Number(pfSettings?.employer_contribution_rate) || 12) / 100;
         const pfEmployeeRate = (Number(pfSettings?.employee_contribution_rate) || 12) / 100;
@@ -1370,12 +1351,9 @@ export class EmployeesService {
     let structureEmployerEsi = 0;
     if (displayStructure) {
       // Fetch PF settings if not already fetched (when there were 0 remaining months)
-      const pfSettingsForStructure = await this.pfSettingsRepository.findOne({
-        where: {
-          effective_date: LessThanOrEqual(new Date().toISOString().split('T')[0]),
-        },
-        order: { effective_date: 'DESC' },
-      });
+      const pfSettingsForStructure = await this.pfService.findActiveAtDate(
+        new Date().toISOString().split('T')[0],
+      );
       const structPfRate = pfSettingsForStructure ? Number(pfSettingsForStructure.employer_contribution_rate) / 100 : 0.12;
       const structMaxPfCap = pfSettingsForStructure ? Number(pfSettingsForStructure.max_pf_cap) : 1800;
       const structEsiEmployerRate = pfSettingsForStructure ? Number(pfSettingsForStructure.esi_contribution_rate ?? 3.25) / 100 : 0.0325;

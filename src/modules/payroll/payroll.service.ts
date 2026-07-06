@@ -128,29 +128,29 @@ export class PayrollService {
 
     const pfSettings = await this.pfService.findActiveAtDate(`${year}-${String(month).padStart(2, '0')}-01`);
 
-    // ── CALCULATOR-IDENTICAL COMPONENT DERIVATION ──
-    const pfEmployerRate = (Number(pfSettings?.employer_contribution_rate) || 12) / 100;
-    const pfEmployeeRate = (Number(pfSettings?.employee_contribution_rate) || 12) / 100;
-    const esiEmployerRate = (Number(pfSettings?.esi_contribution_rate) || 3.25) / 100;
-    const esiEmployeeRate = (Number(pfSettings?.esi_employee_contribution_rate) || 0.75) / 100;
-    const maxPfCap = Number(pfSettings.max_pf_cap) || 1800;
-    const professionalTax = Number(pfSettings.professional_tax ?? 200);
+    const calcComponents = calculateSalaryComponentsFromCtc({
+      ctc: monthlyCtc,
+      pfDeduction: employee.pf_deduction,
+      employerContributionRate: Number(pfSettings?.employer_contribution_rate ?? 12),
+      employeeContributionRate: Number(pfSettings?.employee_contribution_rate ?? 12),
+      maxPfCap: Number(pfSettings?.max_pf_cap ?? 1800),
+      employerEsiRate: Number(pfSettings?.esi_contribution_rate ?? 3.25) / 100,
+      employeeEsiRate: Number(pfSettings?.esi_employee_contribution_rate ?? 0.75) / 100,
+      professionalTax: Number(pfSettings?.professional_tax ?? 200),
+    });
 
-    const basic = Number((monthlyCtc * 0.5).toFixed(2));
-    const hra   = Number((basic * 0.4).toFixed(2));
-
-    const pfApplicable  = isPfApplicable(Number(employee.monthly_ctc), employee.pf_deduction !== false);
+    const basic = calcComponents.basic_salary;
+    const hra = calcComponents.hra;
+    const pfApplicable = isPfApplicable(Number(employee.monthly_ctc), employee.pf_deduction !== false);
     const esiApplicable = isEsiApplicableForBasic(basic);
 
-    const employerPf  = pfApplicable  ? Number(Math.min(basic * pfEmployerRate,  maxPfCap).toFixed(2)) : 0;
-    const employerEsi = esiApplicable ? Number((basic * esiEmployerRate).toFixed(2)) : 0;
-    const employeePf  = pfApplicable  ? Number(Math.min(basic * pfEmployeeRate,  maxPfCap).toFixed(2)) : 0;
-    const employeeEsi = esiApplicable ? Number((basic * esiEmployeeRate).toFixed(2)) : 0;
-
-    // Gross = CTC − employerPf − employerEsi
-    const gross          = Number((monthlyCtc - employerPf - employerEsi).toFixed(2));
-    const othersAllowance = Math.max(0, Number((gross - basic - hra).toFixed(2)));
-    const appliedPt      = (monthlyCtc * 12) <= 250000 ? 0 : professionalTax;
+    const employerPf = calcComponents.employer_pf;
+    const employerEsi = calcComponents.employer_esi;
+    const employeePf = calcComponents.employee_pf;
+    const employeeEsi = calcComponents.employee_esi;
+    const gross = calcComponents.gross_salary;
+    const othersAllowance = calcComponents.other_allowance;
+    const appliedPt = calcComponents.professional_tax;
 
     // 2. Non-payable day proration
     const daysInMonth = new Date(year, month, 0).getDate();
@@ -171,14 +171,13 @@ export class PayrollService {
     const payableBasic  = basic;
 
     // Deductions calculated on full basic salary
-    const pfDeduction         = Number(Math.min(basic * pfEmployeeRate, maxPfCap).toFixed(2));
-    const employeeEsiDeduction = esiApplicable ? Number((basic * esiEmployeeRate).toFixed(2)) : 0;
-    const pfDeductionFinal    = pfApplicable ? pfDeduction : 0;
+    const pfDeductionFinal    = pfApplicable ? employeePf : 0;
+    const employeeEsiDeduction = esiApplicable ? employeeEsi : 0;
     const ptDeduction         = appliedPt > 0 ? Number(appliedPt.toFixed(2)) : 0;
     
     // Employer contributions calculated on full basic salary
-    const employerPfFinal     = pfApplicable ? Number(Math.min(basic * pfEmployerRate, maxPfCap).toFixed(2)) : 0;
-    const employerEsiFinal    = esiApplicable ? Number((basic * esiEmployerRate).toFixed(2)) : 0;
+    const employerPfFinal     = pfApplicable ? employerPf : 0;
+    const employerEsiFinal    = esiApplicable ? employerEsi : 0;
 
     // Additional Components
     const lateAbsentDays = Number(employee.late_arrival_deduction || 0) < 3 ? 0 : (Number(employee.late_arrival_deduction || 0) / 3) * 0.5;

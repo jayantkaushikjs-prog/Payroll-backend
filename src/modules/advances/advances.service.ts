@@ -1,6 +1,6 @@
-import { Injectable, NotFoundException, BadRequestException } from '@nestjs/common';
+import { Injectable, NotFoundException, BadRequestException, Inject, forwardRef } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
-import { Repository } from 'typeorm';
+import { Repository, LessThanOrEqual, In } from 'typeorm';
 import { EmployeeAdvance } from './employee-advance.entity';
 import { AdvanceLog } from './advance-log.entity';
 import { CreateAdvanceDto } from './dto/create-advance.dto';
@@ -16,6 +16,7 @@ export class AdvancesService {
     private advancesRepository: Repository<EmployeeAdvance>,
     @InjectRepository(AdvanceLog)
     private advanceLogsRepository: Repository<AdvanceLog>,
+    @Inject(forwardRef(() => EmployeesService))
     private employeesService: EmployeesService,
   ) {}
 
@@ -130,6 +131,34 @@ export class AdvancesService {
       .where('adv.start_month = :month AND adv.start_year = :year', { month, year })
       .getRawOne();
     return Number(result?.total || 0);
+  }
+
+  async hasOutstandingAdvances(employeeId: number): Promise<boolean> {
+    const pending = await this.advancesRepository.findOne({
+      where: { employee_id: employeeId, is_fully_recovered: false },
+    });
+    return !!pending && Number(pending.remaining_amount) > 0.01;
+  }
+
+  async findActive(): Promise<EmployeeAdvance[]> {
+    return this.advancesRepository.find({
+      where: { is_fully_recovered: false },
+    });
+  }
+
+  async findByEmployeeAsc(employeeId: number): Promise<EmployeeAdvance[]> {
+    return this.advancesRepository.find({
+      where: { employee_id: employeeId },
+      order: { date: 'ASC' },
+    });
+  }
+
+  async removeByEmployee(employeeId: number): Promise<void> {
+    await this.advancesRepository.delete({ employee_id: employeeId });
+  }
+
+  async removeByEmployees(employeeIds: number[]): Promise<void> {
+    await this.advancesRepository.delete({ employee_id: In(employeeIds) });
   }
 
   async update(id: number, updateDto: Partial<CreateAdvanceDto>): Promise<EmployeeAdvance> {

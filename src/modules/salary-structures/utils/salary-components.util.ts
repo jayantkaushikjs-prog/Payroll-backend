@@ -4,9 +4,11 @@ export interface SalaryComponentInput {
   hraPercent?: number;
   pfDeduction?: boolean;
   employerContributionRate?: number;
+  employeeContributionRate?: number;
   maxPfCap?: number;
   employeeEsiRate?: number;
   employerEsiRate?: number;
+  professionalTax?: number;
 }
 
 export interface SalaryComponents {
@@ -18,6 +20,9 @@ export interface SalaryComponents {
   ctc: number;
   employer_pf: number;
   employer_esi: number;
+  employee_pf: number;
+  employee_esi: number;
+  professional_tax: number;
 }
 
 export const BASIC_PERCENT_OF_CTC = 50;
@@ -31,8 +36,6 @@ export function isPfApplicable(ctc: number, existingPfMember?: boolean): boolean
   return existingPfMember === true || ctc <= PF_WAGE_LIMIT;
 }
 
-
-
 export function isEsiApplicableForBasic(basicSalary: number): boolean {
   return basicSalary <= ESI_WAGE_LIMIT;
 }
@@ -42,19 +45,26 @@ export function calculateSalaryComponentsFromCtc(input: SalaryComponentInput): S
   const basicRatio = Number(input.basicPercent ?? BASIC_PERCENT_OF_CTC) / 100;
   const hraRatio = Number(input.hraPercent ?? HRA_PERCENT_OF_BASIC) / 100;
   const employerContributionRate = Number(input.employerContributionRate ?? 12) / 100;
+  const employeeContributionRate = Number(input.employeeContributionRate ?? 12) / 100;
   const maxPfCap = Number(input.maxPfCap ?? 1800);
   const employeeEsiRate = Number(input.employeeEsiRate ?? EMPLOYEE_ESI_RATE);
   const employerEsiRate = Number(input.employerEsiRate ?? EMPLOYER_ESI_RATE);
+  const professionalTaxRate = Number(input.professionalTax ?? 200);
 
   const basic_salary = Number((basicRatio * ctc).toFixed(2));
   const hra = Number((hraRatio * basic_salary).toFixed(2));
   const pfApplicable = isPfApplicable(ctc, input.pfDeduction !== false);
   const esiApplicable = isEsiApplicableForBasic(basic_salary);
+  
   const employer_pf = pfApplicable ? Number(Math.min(basic_salary * employerContributionRate, maxPfCap).toFixed(2)) : 0;
   const employer_esi = esiApplicable ? Number((basic_salary * employerEsiRate).toFixed(2)) : 0;
   const gross_salary = Number((ctc - employer_pf - employer_esi).toFixed(2));
   const special_allowance = 0;
   const other_allowance = Math.max(0, Number((gross_salary - basic_salary - hra).toFixed(2)));
+
+  const employee_pf = pfApplicable ? Number(Math.min(basic_salary * employeeContributionRate, maxPfCap).toFixed(2)) : 0;
+  const employee_esi = esiApplicable ? Number((basic_salary * employeeEsiRate).toFixed(2)) : 0;
+  const professional_tax = (ctc * 12) <= 250000 ? 0 : professionalTaxRate;
 
   return {
     basic_salary,
@@ -65,6 +75,9 @@ export function calculateSalaryComponentsFromCtc(input: SalaryComponentInput): S
     ctc,
     employer_pf,
     employer_esi,
+    employee_pf,
+    employee_esi,
+    professional_tax,
   };
 }
 
@@ -73,19 +86,26 @@ export function calculateSalaryComponentsFromExistingRatios(
 ): SalaryComponents {
   const ctc = Number(input.ctc);
   const employerContributionRate = Number(input.employerContributionRate ?? 12) / 100;
+  const employeeContributionRate = Number(input.employeeContributionRate ?? 12) / 100;
   const maxPfCap = Number(input.maxPfCap ?? 1800);
   const employeeEsiRate = Number(input.employeeEsiRate ?? EMPLOYEE_ESI_RATE);
   const employerEsiRate = Number(input.employerEsiRate ?? EMPLOYER_ESI_RATE);
+  const professionalTaxRate = Number(input.professionalTax ?? 200);
 
   const basic_salary = Number((input.basicRatio * ctc).toFixed(2));
   const hra = Number((input.hraRatio * basic_salary).toFixed(2));
   const pfApplicable = isPfApplicable(ctc, input.pfDeduction !== false);
   const esiApplicable = isEsiApplicableForBasic(basic_salary);
+
   const employer_pf = pfApplicable ? Number(Math.min(basic_salary * employerContributionRate, maxPfCap).toFixed(2)) : 0;
   const employer_esi = esiApplicable ? Number((basic_salary * employerEsiRate).toFixed(2)) : 0;
   const gross_salary = Number((ctc - employer_pf - employer_esi).toFixed(2));
   const special_allowance = 0;
   const other_allowance = Math.max(0, Number((gross_salary - basic_salary - hra).toFixed(2)));
+
+  const employee_pf = pfApplicable ? Number(Math.min(basic_salary * employeeContributionRate, maxPfCap).toFixed(2)) : 0;
+  const employee_esi = esiApplicable ? Number((basic_salary * employeeEsiRate).toFixed(2)) : 0;
+  const professional_tax = (ctc * 12) <= 250000 ? 0 : professionalTaxRate;
 
   return {
     basic_salary,
@@ -96,5 +116,8 @@ export function calculateSalaryComponentsFromExistingRatios(
     ctc,
     employer_pf,
     employer_esi,
+    employee_pf,
+    employee_esi,
+    professional_tax,
   };
 }
