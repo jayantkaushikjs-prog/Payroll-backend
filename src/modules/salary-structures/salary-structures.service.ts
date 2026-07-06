@@ -125,6 +125,13 @@ export class SalaryStructuresService {
     });
   }
 
+  async findAll(): Promise<SalaryStructure[]> {
+    return this.salaryStructuresRepository.find({
+      relations: ['employee'],
+      order: { effective_from: 'DESC' },
+    });
+  }
+
   async importCsv(csvContent: string): Promise<{ imported: number; errors: string[] }> {
     const lines = csvContent.split(/\r?\n/).filter(line => line.trim().length > 0);
     if (lines.length < 2) {

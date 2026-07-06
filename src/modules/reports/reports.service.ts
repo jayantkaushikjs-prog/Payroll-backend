@@ -253,9 +253,12 @@ export class ReportsService {
     return [headers.join(','), ...rows.map(r => r.join(','))].join('\n');
   }
 
-  async generateAdvancesCsv(role: Role): Promise<string> {
+  async generateAdvancesCsv(role: Role, month?: number, year?: number): Promise<string> {
     this.assertRole(role, [Role.FINANCE]);
-    const advances = await this.advancesService.findAll();
+    let advances = await this.advancesService.findAll();
+    if (month && year) {
+      advances = advances.filter(adv => adv.start_month === month && adv.start_year === year);
+    }
     const headers = [
       'Employee Code',
       'Employee Name',
@@ -285,9 +288,25 @@ export class ReportsService {
     return [headers.join(','), ...rows.map(r => r.join(','))].join('\n');
   }
 
-  async generateSalaryComponentsCsv(role: Role): Promise<string> {
+  async generateSalaryComponentsCsv(role: Role, month?: number, year?: number): Promise<string> {
     this.assertRole(role, [Role.FINANCE]);
-    const structures = await this.salaryStructuresService.findAllActive();
+    let structures: any[];
+    if (month && year) {
+      const targetEnd = new Date(year, month, 0).toISOString().split('T')[0];
+      const allStructures = await this.salaryStructuresService.findAll();
+      const empMap = new Map<number, any>();
+      allStructures.forEach(s => {
+        if (s.effective_from <= targetEnd) {
+          const existing = empMap.get(s.employee_id);
+          if (!existing || s.effective_from > existing.effective_from) {
+            empMap.set(s.employee_id, s);
+          }
+        }
+      });
+      structures = Array.from(empMap.values());
+    } else {
+      structures = await this.salaryStructuresService.findAllActive();
+    }
     const headers = [
       'Employee Code',
       'Employee Name',
@@ -327,9 +346,20 @@ export class ReportsService {
     return [headers.join(','), ...rows.map(r => r.join(','))].join('\n');
   }
 
-  async generateEmployeeMasterCsv(role: Role): Promise<string> {
+  async generateEmployeeMasterCsv(role: Role, month?: number, year?: number): Promise<string> {
     this.assertRole(role, [Role.HR]);
-    const employees = await this.employeesService.findAll();
+    let employees = await this.employeesService.findAll();
+    if (month && year) {
+      const targetEnd = new Date(year, month, 0).toISOString().split('T')[0];
+      const targetStart = `${year}-${String(month).padStart(2, '0')}-01`;
+      employees = employees.filter(emp => {
+        const jDate = emp.joining_date;
+        const rDate = emp.relieving_date;
+        if (jDate > targetEnd) return false;
+        if (rDate && rDate < targetStart) return false;
+        return true;
+      });
+    }
     const headers = [
       'Employee Code',
       'Name',
@@ -357,9 +387,12 @@ export class ReportsService {
     return [headers.join(','), ...rows.map(r => r.join(','))].join('\n');
   }
 
-  async generateNonPayableDaysCsv(role: Role): Promise<string> {
+  async generateNonPayableDaysCsv(role: Role, month?: number, year?: number): Promise<string> {
     this.assertRole(role, [Role.HR]);
-    const logs = await this.nonPayableDaysService.findAll();
+    let logs = await this.nonPayableDaysService.findAll();
+    if (month && year) {
+      logs = logs.filter(log => log.month === month && log.year === year);
+    }
     const headers = ['Employee Code', 'Employee Name', 'Department', 'Month', 'Year', 'Non-Payable Days', 'Remarks'];
     const rows = logs.map(log => [
       this.escapeCsv(log.employee?.employee_code),
@@ -374,9 +407,18 @@ export class ReportsService {
     return [headers.join(','), ...rows.map(r => r.join(','))].join('\n');
   }
 
-  async generateJoiningExitCsv(role: Role): Promise<string> {
+  async generateJoiningExitCsv(role: Role, month?: number, year?: number): Promise<string> {
     this.assertRole(role, [Role.HR]);
-    const employees = await this.employeesService.findAll();
+    let employees = await this.employeesService.findAll();
+    if (month && year) {
+      employees = employees.filter(emp => {
+        const jDate = emp.joining_date ? new Date(emp.joining_date) : null;
+        const rDate = emp.relieving_date ? new Date(emp.relieving_date) : null;
+        const isJoining = jDate && (jDate.getUTCFullYear() === year && jDate.getUTCMonth() + 1 === month);
+        const isExit = rDate && (rDate.getUTCFullYear() === year && rDate.getUTCMonth() + 1 === month);
+        return isJoining || isExit;
+      });
+    }
     const headers = ['Employee Code', 'Name', 'Department', 'Designation', 'Joining Date', 'Relieving Date', 'Record Type', 'Status'];
     const rows = employees.map(emp => [
       this.escapeCsv(emp.employee_code),

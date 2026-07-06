@@ -79,8 +79,17 @@ export class ReportsController {
 
   @Get('advances/csv')
   @RequirePermissions(Permission.VIEW_PAYROLL_REPORTS)
-  async downloadAdvancesCsv(@Req() req: Request, @Res() res: Response) {
-    const csvContent = await this.reportsService.generateAdvancesCsv(this.getRole(req));
+  async downloadAdvancesCsv(
+    @Query('month') month: string,
+    @Query('year') year: string,
+    @Req() req: Request,
+    @Res() res: Response,
+  ) {
+    const csvContent = await this.reportsService.generateAdvancesCsv(
+      this.getRole(req),
+      month ? +month : undefined,
+      year ? +year : undefined,
+    );
     res.setHeader('Content-Type', 'text/csv');
     res.setHeader('Content-Disposition', `attachment; filename=${this.reportsService.filename('advances-report')}`);
     return res.status(200).send(csvContent);
@@ -88,8 +97,17 @@ export class ReportsController {
 
   @Get('salary-components/csv')
   @RequirePermissions(Permission.VIEW_PAYROLL_REPORTS)
-  async downloadSalaryComponentsCsv(@Req() req: Request, @Res() res: Response) {
-    const csvContent = await this.reportsService.generateSalaryComponentsCsv(this.getRole(req));
+  async downloadSalaryComponentsCsv(
+    @Query('month') month: string,
+    @Query('year') year: string,
+    @Req() req: Request,
+    @Res() res: Response,
+  ) {
+    const csvContent = await this.reportsService.generateSalaryComponentsCsv(
+      this.getRole(req),
+      month ? +month : undefined,
+      year ? +year : undefined,
+    );
     res.setHeader('Content-Type', 'text/csv');
     res.setHeader('Content-Disposition', `attachment; filename=${this.reportsService.filename('salary-components')}`);
     return res.status(200).send(csvContent);
@@ -106,8 +124,17 @@ export class ReportsController {
 
   @Get('employee-master/csv')
   @RequirePermissions(Permission.VIEW_HR_REPORTS)
-  async downloadEmployeeMasterCsv(@Req() req: Request, @Res() res: Response) {
-    const csvContent = await this.reportsService.generateEmployeeMasterCsv(this.getRole(req));
+  async downloadEmployeeMasterCsv(
+    @Query('month') month: string,
+    @Query('year') year: string,
+    @Req() req: Request,
+    @Res() res: Response,
+  ) {
+    const csvContent = await this.reportsService.generateEmployeeMasterCsv(
+      this.getRole(req),
+      month ? +month : undefined,
+      year ? +year : undefined,
+    );
     res.setHeader('Content-Type', 'text/csv');
     res.setHeader('Content-Disposition', `attachment; filename=${this.reportsService.filename('employee-master')}`);
     return res.status(200).send(csvContent);
@@ -115,8 +142,17 @@ export class ReportsController {
 
   @Get('non-payable-days/csv')
   @RequirePermissions(Permission.VIEW_HR_REPORTS)
-  async downloadNonPayableDaysCsv(@Req() req: Request, @Res() res: Response) {
-    const csvContent = await this.reportsService.generateNonPayableDaysCsv(this.getRole(req));
+  async downloadNonPayableDaysCsv(
+    @Query('month') month: string,
+    @Query('year') year: string,
+    @Req() req: Request,
+    @Res() res: Response,
+  ) {
+    const csvContent = await this.reportsService.generateNonPayableDaysCsv(
+      this.getRole(req),
+      month ? +month : undefined,
+      year ? +year : undefined,
+    );
     res.setHeader('Content-Type', 'text/csv');
     res.setHeader('Content-Disposition', `attachment; filename=${this.reportsService.filename('non-payable-days')}`);
     return res.status(200).send(csvContent);
@@ -124,8 +160,17 @@ export class ReportsController {
 
   @Get('joining-exit/csv')
   @RequirePermissions(Permission.VIEW_HR_REPORTS)
-  async downloadJoiningExitCsv(@Req() req: Request, @Res() res: Response) {
-    const csvContent = await this.reportsService.generateJoiningExitCsv(this.getRole(req));
+  async downloadJoiningExitCsv(
+    @Query('month') month: string,
+    @Query('year') year: string,
+    @Req() req: Request,
+    @Res() res: Response,
+  ) {
+    const csvContent = await this.reportsService.generateJoiningExitCsv(
+      this.getRole(req),
+      month ? +month : undefined,
+      year ? +year : undefined,
+    );
     res.setHeader('Content-Type', 'text/csv');
     res.setHeader('Content-Disposition', `attachment; filename=${this.reportsService.filename('joining-exit-records')}`);
     return res.status(200).send(csvContent);
