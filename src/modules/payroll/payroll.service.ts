@@ -85,7 +85,7 @@ export class PayrollService {
     };
   }
 
-  async calculateSingleEmployee(employeeId: number, month: number, year: number) {
+  async calculateSingleEmployee(employeeId: number, month: number, year: number, overrideCtc?: number) {
     const employee = await this.employeesService.findOne(employeeId);
     if (!employee.active_status) {
       throw new BadRequestException(`Employee ${employee.name} is inactive`);
@@ -121,7 +121,7 @@ export class PayrollService {
       throw new BadRequestException(`Salary structure is missing for employee ${employee.name}`);
     }
 
-    let monthlyCtc = Number(structure.ctc);
+    let monthlyCtc = overrideCtc !== undefined ? overrideCtc : Number(structure.ctc);
 
     // DYNAMIC APPRAISAL REMOVED: Appraisals are now permanently applied to CTC during generatePayroll
     // which syncs the salary structure, ensuring UI consistency across the app.
@@ -362,11 +362,18 @@ export class PayrollService {
           effectiveDate = monthlyInput.appraisal_effective_date;
         }
 
+        let overrideCtc: number | undefined = undefined;
+
         if (Number(appraisal) > 0) {
           let shouldApply = false;
-          if (effectiveDate) {
-            const effectiveMonthStart = new Date(new Date(effectiveDate).getFullYear(), new Date(effectiveDate).getMonth(), 1);
-            const payrollMonthStart = new Date(year, month - 1, 1);
+          const isDateValid = effectiveDate && 
+            (typeof effectiveDate === 'string' ? effectiveDate.trim() !== '' : true) && 
+            !isNaN(new Date(effectiveDate).getTime());
+          
+          if (isDateValid) {
+            const parsedDate = new Date(effectiveDate);
+            const effectiveMonthStart = new Date(Date.UTC(parsedDate.getUTCFullYear(), parsedDate.getUTCMonth(), 1));
+            const payrollMonthStart = new Date(Date.UTC(year, month - 1, 1));
             if (payrollMonthStart >= effectiveMonthStart) {
               shouldApply = true;
             }
@@ -375,13 +382,28 @@ export class PayrollService {
           }
 
           if (shouldApply) {
-            const newCtc = Number(emp.monthly_ctc) + Number(appraisal);
+            const baseCtc = Number(emp.monthly_ctc);
+            const newCtc = baseCtc + Number(appraisal);
             
+            if (isDateValid) {
+              const effDate = new Date(effectiveDate);
+              const effYear = effDate.getUTCFullYear();
+              const effMonth = effDate.getUTCMonth() + 1;
+              if (effYear === year && effMonth === month) {
+                const daysInMonth = new Date(year, month, 0).getDate();
+                const effectiveDay = effDate.getUTCDate();
+                const daysWithAppraisal = daysInMonth - effectiveDay + 1;
+                const ratio = daysWithAppraisal / daysInMonth;
+                overrideCtc = baseCtc + Number((Number(appraisal) * ratio).toFixed(2));
+              }
+            }
+
             // Permanently update employee and create new Salary Structure
             await this.employeesService.update(emp.id, { 
               monthly_ctc: newCtc, 
               appraisal: 0, 
-              appraisal_effective_date: null 
+              appraisal_effective_date: null,
+              preferredEffectiveFrom: effectiveDate
             } as any);
             
             // Clear it in monthlyInput if it came from there to prevent double counting
@@ -394,7 +416,7 @@ export class PayrollService {
           }
         }
 
-        const calc = await this.calculateSingleEmployee(emp.id, month, year);
+        const calc = await this.calculateSingleEmployee(emp.id, month, year, overrideCtc);
 
         let payroll = await this.payrollRepository.findOne({
           where: { employee_id: emp.id, month, year, status: 'draft' },

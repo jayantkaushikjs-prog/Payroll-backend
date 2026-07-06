@@ -61,11 +61,11 @@ export class CreateEmployeeDto {
   @Transform(({ value }) => typeof value === 'string' ? (value.trim() || undefined) : value)
   personal_email?: string;
 
-  @IsOptional()
+  @IsNotEmpty({ message: 'Phone number is required' })
   @IsString()
-  @Transform(({ value }) => typeof value === 'string' ? (value.trim() || undefined) : value)
+  @Transform(({ value }) => typeof value === 'string' ? value.trim() : value)
   @Matches(/^\d{10}$/, { message: 'Phone number must be numeric and exactly 10 digits' })
-  phone?: string;
+  phone: string;
 
   @IsNotEmpty({ message: 'Department is required' })
   @IsString()

@@ -294,7 +294,7 @@ export class EmployeesService {
         preview_status,
         preview_relief_locked,
         appraisal: appraisal > 0 ? appraisal : 0,
-        appraisal_effective_date: appraisalEffectiveDate,
+        appraisal_effective_date: (input && input.appraisal_effective_date) ? input.appraisal_effective_date : null,
         no_of_days_present: input ? input.no_of_days_present : null, // Default to null so frontend falls back to dynamic defaults
         deduction_absent: input ? input.deduction_absent : 0,
         leave_encashment: input ? input.leave_encashment : 0,
@@ -960,27 +960,23 @@ export class EmployeesService {
     let endDate: Date;
 
     if (startDateStr && endDateStr) {
-      startDate = new Date(startDateStr);
-      startDate.setHours(0, 0, 0, 0);
-      endDate = new Date(endDateStr);
-      endDate.setHours(0, 0, 0, 0);
+      const s = new Date(startDateStr);
+      startDate = new Date(Date.UTC(s.getUTCFullYear(), s.getUTCMonth(), s.getUTCDate()));
+      const e = new Date(endDateStr);
+      endDate = new Date(Date.UTC(e.getUTCFullYear(), e.getUTCMonth(), e.getUTCDate(), 23, 59, 59, 999));
     } else {
       const yr = year ? parseInt(year, 10) : new Date().getFullYear();
-      startDate = new Date(yr, 3, 1); // April 1st of year
-      startDate.setHours(0, 0, 0, 0);
-      endDate = new Date(yr + 1, 2, 31); // March 31st of year + 1
-      endDate.setHours(0, 0, 0, 0);
+      startDate = new Date(Date.UTC(yr, 3, 1)); // April 1st of year (UTC)
+      endDate = new Date(Date.UTC(yr + 1, 2, 31, 23, 59, 59, 999)); // March 31st of year + 1 (UTC)
     }
 
     // Generate all target months within the range
     const targetMonths: { year: number; month: number }[] = [];
-    const current = new Date(startDate.getTime());
-    current.setDate(1);
-    const endLimit = new Date(endDate.getTime());
-    endLimit.setDate(1);
+    const current = new Date(Date.UTC(startDate.getUTCFullYear(), startDate.getUTCMonth(), 1));
+    const endLimit = new Date(Date.UTC(endDate.getUTCFullYear(), endDate.getUTCMonth(), 1));
     while (current <= endLimit) {
-      targetMonths.push({ year: current.getFullYear(), month: current.getMonth() + 1 });
-      current.setMonth(current.getMonth() + 1);
+      targetMonths.push({ year: current.getUTCFullYear(), month: current.getUTCMonth() + 1 });
+      current.setUTCMonth(current.getUTCMonth() + 1);
     }
 
     // Get all disbursed payrolls for the employee
@@ -1045,8 +1041,8 @@ export class EmployeesService {
       if (!employee.appraisal_effective_date) return appraisal;
 
       const effectiveDate = new Date(employee.appraisal_effective_date);
-      const effectiveMonthStart = new Date(effectiveDate.getFullYear(), effectiveDate.getMonth(), 1);
-      const targetMonthStart = new Date(year, month - 1, 1);
+      const effectiveMonthStart = new Date(Date.UTC(effectiveDate.getUTCFullYear(), effectiveDate.getUTCMonth(), 1));
+      const targetMonthStart = new Date(Date.UTC(year, month - 1, 1));
 
       return targetMonthStart >= effectiveMonthStart ? appraisal : 0;
     };
@@ -1086,15 +1082,19 @@ export class EmployeesService {
       order: { effective_from: 'ASC', created_at: 'ASC' },
     });
 
+    const parseToUTCDate = (dateVal: any): Date => {
+      const d = new Date(dateVal);
+      return new Date(Date.UTC(d.getUTCFullYear(), d.getUTCMonth(), d.getUTCDate()));
+    };
+
     const getStructureForMonth = (year: number, month: number): SalaryStructure | null => {
-      const monthEnd = new Date(year, month, 0);
-      monthEnd.setHours(23, 59, 59, 999);
+      const daysInMonth = new Date(year, month, 0).getDate();
+      const monthEndUTC = new Date(Date.UTC(year, month - 1, daysInMonth, 23, 59, 59, 999));
 
       const effective = salaryStructures
         .filter((s) => {
-          const effectiveFrom = new Date(s.effective_from);
-          effectiveFrom.setHours(0, 0, 0, 0);
-          return effectiveFrom <= monthEnd;
+          const effectiveFrom = parseToUTCDate(s.effective_from);
+          return effectiveFrom <= monthEndUTC;
         })
         .at(-1);
 
@@ -1102,7 +1102,7 @@ export class EmployeesService {
     };
 
     const displayStructure =
-      getStructureForMonth(endDate.getFullYear(), endDate.getMonth() + 1) ||
+      getStructureForMonth(endDate.getUTCFullYear(), endDate.getUTCMonth() + 1) ||
       salaryStructures.find((s) => s.is_active) ||
       salaryStructures.at(-1) ||
       null;
@@ -1118,8 +1118,8 @@ export class EmployeesService {
     let estimatedMonthlyPayout = 0;
 
     if (displayStructure) {
-      const displayYear = endDate.getFullYear();
-      const displayMonth = endDate.getMonth() + 1;
+      const displayYear = endDate.getUTCFullYear();
+      const displayMonth = endDate.getUTCMonth() + 1;
       const pfSettings = await this.pfService.findActiveAtDate(
         `${displayYear}-${String(displayMonth).padStart(2, '0')}-01`,
       );
