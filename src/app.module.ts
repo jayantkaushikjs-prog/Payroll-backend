@@ -126,6 +126,8 @@ export class AppModule implements OnApplicationBootstrap {
   }
 
   async seed() {
+    console.log('Synchronizing database schema...');
+    await this.userRepo.manager.connection.synchronize();
     await this.seedUsers();
   }
 
