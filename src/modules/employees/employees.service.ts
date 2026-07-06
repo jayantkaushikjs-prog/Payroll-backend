@@ -639,6 +639,8 @@ export class EmployeesService {
     });
     const employerContributionRate = Number(pfSettings?.employer_contribution_rate ?? 12);
     const maxPfCap = Number(pfSettings?.max_pf_cap ?? 1800);
+    const employeeEsiRate = pfSettings ? Number(pfSettings.esi_employee_contribution_rate) / 100 : undefined;
+    const employerEsiRate = pfSettings ? Number(pfSettings.esi_contribution_rate) / 100 : undefined;
 
     const components = calculateSalaryComponentsFromExistingRatios({
       ctc,
@@ -647,6 +649,8 @@ export class EmployeesService {
       pfDeduction: employee.pf_deduction,
       employerContributionRate,
       maxPfCap,
+      employeeEsiRate,
+      employerEsiRate,
     });
 
     await this.salaryStructureRepository.update(

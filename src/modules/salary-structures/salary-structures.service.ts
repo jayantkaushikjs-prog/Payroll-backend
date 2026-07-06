@@ -26,20 +26,23 @@ export class SalaryStructuresService {
 
     const ctc = Number(createSalaryStructureDto.ctc);
 
-    let employerContributionRate = 12;
-
-    if (employee.pf_deduction !== false) {
-      const pfSettings = await this.pfService.findActiveAtDate(createSalaryStructureDto.effective_from);
-      employerContributionRate = Number(pfSettings.employer_contribution_rate);
-    }
+    const pfSettings = await this.pfService.findActiveAtDate(createSalaryStructureDto.effective_from);
+    const employerContributionRate = employee.pf_deduction !== false
+      ? Number(pfSettings.employer_contribution_rate)
+      : 0;
+    const maxPfCap = Number(pfSettings.max_pf_cap);
+    const employeeEsiRate = Number(pfSettings.esi_employee_contribution_rate) / 100;
+    const employerEsiRate = Number(pfSettings.esi_contribution_rate) / 100;
 
     const components = calculateSalaryComponentsFromCtc({
       ctc,
-      basicPercent: 50,
-      hraPercent: 40,
+      basicPercent: createSalaryStructureDto.basic_percent || 50,
+      hraPercent: createSalaryStructureDto.hra_percent || 40,
       pfDeduction: employee.pf_deduction,
       employerContributionRate,
-      maxPfCap: 1800,
+      maxPfCap,
+      employeeEsiRate,
+      employerEsiRate,
     });
 
     // Deactivate existing structures for this employee
