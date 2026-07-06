@@ -164,6 +164,32 @@ export class EmployeesController {
     return this.employeesService.updateMonthlyInput(+id, month, data);
   }
 
+  @Get('preview-csv-sample')
+  async downloadPreviewCsvSample(@Res() res: Response) {
+    const csvContent = this.employeesService.generatePreviewCsvSample();
+    res.setHeader('Content-Type', 'text/csv');
+    res.setHeader('Content-Disposition', `attachment; filename=monthly_preview_sample.csv`);
+    return res.status(200).send(csvContent);
+  }
+
+  @Post('preview-csv-import')
+  @UseInterceptors(FileInterceptor('file'))
+  async importPreviewCsv(@UploadedFile() file: any, @Body() body: { month: string }) {
+    if (!file) throw new BadRequestException('No file uploaded');
+    const csvData = file.buffer.toString('utf8');
+    return this.employeesService.importPreviewCsv(csvData, body.month);
+  }
+
+  @Get('preview-csv-export')
+  async downloadPreviewCsvExport(@Query('month') month: string, @Res() res: Response) {
+    // Validate preview month format
+    this.assertPreviewMonth(month);
+    const csvContent = await this.employeesService.generatePreviewCsvExport(month);
+    res.setHeader('Content-Type', 'text/csv');
+    res.setHeader('Content-Disposition', `attachment; filename=monthly_preview_${month}.csv`);
+    return res.status(200).send(csvContent);
+  }
+
   @Get(':id')
   findOne(@Param('id') id: string, @Req() req) {
     const user = req.user;
@@ -257,30 +283,5 @@ export class EmployeesController {
     return this.employeesService.restore(+id);
   }
 
-  @Get('preview-csv-sample')
-  async downloadPreviewCsvSample(@Res() res: Response) {
-    const csvContent = this.employeesService.generatePreviewCsvSample();
-    res.setHeader('Content-Type', 'text/csv');
-    res.setHeader('Content-Disposition', `attachment; filename=monthly_preview_sample.csv`);
-    return res.status(200).send(csvContent);
-  }
-
-  @Post('preview-csv-import')
-  @UseInterceptors(FileInterceptor('file'))
-  async importPreviewCsv(@UploadedFile() file: any, @Body() body: { month: string }) {
-    if (!file) throw new BadRequestException('No file uploaded');
-    const csvData = file.buffer.toString('utf8');
-    return this.employeesService.importPreviewCsv(csvData, body.month);
-  }
-
-  @Get('preview-csv-export')
-  async downloadPreviewCsvExport(@Query('month') month: string, @Res() res: Response) {
-    // Validate preview month format
-    this.assertPreviewMonth(month);
-    const csvContent = await this.employeesService.generatePreviewCsvExport(month);
-    res.setHeader('Content-Type', 'text/csv');
-    res.setHeader('Content-Disposition', `attachment; filename=monthly_preview_${month}.csv`);
-    return res.status(200).send(csvContent);
-  }
 
 }
