@@ -277,7 +277,13 @@ export class EmployeesService {
         preview_relief_locked = true;
       } else {
         if (relieving && dateInSelectedMonth(relieving)) preview_status = 'relieving';
-        else if (relieving && relieving > selectedMonthEnd) preview_status = 'on_notice';
+        else if (relieving && relieving > selectedMonthEnd) {
+          if (previewLocked) {
+            preview_status = (joining && dateInSelectedMonth(joining)) ? 'new' : 'old';
+          } else {
+            preview_status = 'on_notice';
+          }
+        }
         else if (joining && dateInSelectedMonth(joining)) preview_status = 'new';
         else preview_status = 'old';
       }
@@ -339,6 +345,27 @@ export class EmployeesService {
     if (data.other_deductions !== undefined) input.other_deductions = data.other_deductions;
     if (data.remarks !== undefined) input.remarks = data.remarks;
     if (data.other_inputs !== undefined) input.other_inputs = data.other_inputs;
+
+    if ((data as any).relieving_date !== undefined) {
+      employee.relieving_date = (data as any).relieving_date || null;
+      if (employee.relieving_date) {
+        const today = new Date();
+        today.setHours(0, 0, 0, 0);
+        const [ry, rm, rd] = String(employee.relieving_date).split('-').map(Number);
+        const relievingDate = new Date(ry, rm - 1, rd);
+        if (relievingDate <= today) {
+          const payrollForRelievingMonth = await this.payrollRepository.findOne({
+            where: { month: rm, year: ry, status: 'disbursed' },
+          });
+          if (!payrollForRelievingMonth) {
+            employee.active_status = false;
+          }
+        }
+      } else {
+        employee.active_status = true;
+      }
+      await this.employeesRepository.save(employee);
+    }
 
     return this.monthlyInputRepo.save(input);
   }
@@ -557,7 +584,7 @@ export class EmployeesService {
       const relievingDate = new Date(ry, rm - 1, rd);
       if (relievingDate <= today) {
         // If payroll for the relieving month has already been disbursed (month locked),
-        // do NOT auto-deactivate based on the relieving date — preview-locked months
+        // do NOT auto-inactive based on the relieving date — preview-locked months
         // should not be used to trigger status changes.
         const payrollForRelievingMonth = await this.payrollRepository.findOne({
           where: { month: rm, year: ry, status: 'disbursed' },
@@ -571,12 +598,12 @@ export class EmployeesService {
     if (updateEmployeeDto.active_status === false || shouldAutoDeactivate) {
       const hasPending = await this.advancesService.hasOutstandingAdvances(employee.id);
       if (hasPending) {
-        throw new BadRequestException('Cannot deactivate employee while Advances are pending, Firstly clear all the dues.');
+        throw new BadRequestException('Cannot inactve employee while Advances are pending, Firstly clear all the dues.');
       }
 
       const netPayableAmount = Number(employee.monthly_ctc || 0);
       if (hasPendingEmployeeDeductions(employee, netPayableAmount)) {
-        throw new BadRequestException('Cannot deactivate employee while Damages Recovery or Other Deductions exceed the net payable amount. Clear the dues first.');
+        throw new BadRequestException('Cannot inactive employee while Damages Recovery or Other Deductions exceed the net payable amount. Clear the dues first.');
       }
 
       employee.active_status = false;
